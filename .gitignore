@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/  # Commented out - was blocking web/src/lib/ from being committed
 lib64/
 parts/
 sdist/
