@@ -15,3 +15,4 @@ isodate
 pydantic
 tenacity
 markdown
+html-to-markdown
