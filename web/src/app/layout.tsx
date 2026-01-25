@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   description: "Your daily curated AI news digest.",
 };
 
-import { Analytics } from "@vercel/analytics/react";
+import { Analytics } from "@vercel/analytics/next";
 
 export default function RootLayout({
   children,
