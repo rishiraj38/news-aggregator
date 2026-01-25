@@ -1,0 +1,32 @@
+# Vercel Web Analytics Configuration
+
+## Summary
+Configured Vercel Web Analytics for the Next.js App Router project by updating the import path in the root layout file.
+
+## Changes Made
+
+### Modified Files:
+- **web/src/app/layout.tsx**: Updated Analytics import to use the Next.js-specific entry point
+
+## Implementation Details
+
+The project already had `@vercel/analytics` (v1.6.1) installed and the `<Analytics />` component was already included in the root layout. However, the import was using `@vercel/analytics/react` instead of the recommended `@vercel/analytics/next` for Next.js App Router projects.
+
+**Change made:**
+- Changed `import { Analytics } from "@vercel/analytics/react";` to `import { Analytics } from "@vercel/analytics/next";`
+
+The `<Analytics />` component is correctly placed inside the `<body>` tag after the `{children}` element, which is the recommended location for App Router projects.
+
+## Verification
+
+1. ✅ **Dependencies**: The package `@vercel/analytics` is already installed (v1.6.1)
+2. ✅ **TypeScript Compilation**: Successful (verified during build attempt)
+3. ✅ **Linting**: No linting errors in the modified file
+4. ✅ **Placement**: Analytics component is correctly positioned in the root layout
+
+## Notes
+
+- This is an App Router project (uses `src/app` directory structure)
+- The Analytics component is wrapped within `ClerkProvider` for authentication
+- No new dependencies were needed as the package was already installed
+- Using `@vercel/analytics/next` is the recommended approach for Next.js projects as it provides optimizations specific to the Next.js runtime
