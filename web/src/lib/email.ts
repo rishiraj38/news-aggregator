@@ -121,7 +121,7 @@ export async function sendWelcomeEmail(user: User, digests: Digest[]) {
   `;
 
   await transporter.sendMail({
-    from: `"Helix - AI News Digest" <${process.env.MY_EMAIL}>`,
+    from: `"Helix AI" <${process.env.MY_EMAIL}>`,
     to: user.email,
     subject: "Welcome to Helix - Your AI Digest Awaits! 🚀",
     html: htmlContent,

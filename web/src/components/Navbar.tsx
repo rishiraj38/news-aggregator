@@ -28,6 +28,8 @@ export default function Navbar() {
               </span>
             </Link>
           </div>
+
+          {/* Desktop Menu */}
           <div className="hidden md:block">
             <div className="ml-10 flex items-center space-x-6">
               <Link
@@ -48,8 +50,43 @@ export default function Navbar() {
               )}
             </div>
           </div>
+
+          {/* Mobile Menu Button + User Avatar */}
+          <div className="md:hidden flex items-center gap-4">
+            {isSignedIn && <UserButton afterSignOutUrl="/" />}
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="text-gray-400 hover:text-white p-2"
+            >
+              {isOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Mobile Menu Dropdown */}
+      {isOpen && (
+        <div className="md:hidden bg-neutral-950 border-b border-white/5">
+          <div className="px-4 pt-2 pb-6 space-y-4">
+            <Link
+              href="/dashboard"
+              className="block text-gray-400 hover:text-white text-base font-medium"
+              onClick={() => setIsOpen(false)}
+            >
+              Dashboard
+            </Link>
+            {!isSignedIn && (
+              <Link
+                href="/sign-in"
+                className="block w-full text-center bg-white text-black px-5 py-3 rounded-lg text-base font-semibold hover:bg-gray-200 transition"
+                onClick={() => setIsOpen(false)}
+              >
+                Sign In
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
