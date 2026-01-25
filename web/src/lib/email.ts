@@ -5,7 +5,7 @@ interface Digest {
   title: string;
   summary: string;
   url: string;
-  source: string;
+  article_type: string;
   created_at: Date;
 }
 
@@ -14,7 +14,7 @@ interface User {
   name: string;
 }
 
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: parseInt(process.env.SMTP_PORT || "587"),
   secure: false,
@@ -33,7 +33,7 @@ export async function sendWelcomeEmail(user: User, digests: Digest[]) {
       <h3 style="margin: 0 0 8px 0; color: #1f2937; font-size: 18px;">${index + 1}. ${digest.title}</h3>
       <p style="margin: 0 0 12px 0; color: #4b5563; line-height: 1.6;">${digest.summary}</p>
       <div style="display: flex; justify-content: space-between; align-items: center; font-size: 14px;">
-        <span style="color: #6b7280;">📰 ${digest.source}</span>
+        <span style="color: #6b7280;">📰 ${digest.article_type}</span>
         <a href="${digest.url}" style="background: #4f46e5; color: white; padding: 8px 16px; text-decoration: none; border-radius: 6px; font-weight: 500;">Read Article →</a>
       </div>
     </div>

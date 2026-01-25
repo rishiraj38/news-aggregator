@@ -5,7 +5,7 @@ export interface DigestArticle {
   title: string;
   summary: string;
   url: string;
-  source: string;
+  article_type: string;
   created_at: Date;
 }
 
@@ -17,7 +17,7 @@ export async function getRecentDigests(): Promise<DigestArticle[]> {
   const digests = await db.digest.findMany({
     where: {
       summary: {
-        not: null,
+        not: "",
       },
     },
     orderBy: {
@@ -29,7 +29,7 @@ export async function getRecentDigests(): Promise<DigestArticle[]> {
       title: true,
       summary: true,
       url: true,
-      source: true,
+      article_type: true,
       created_at: true,
     },
   });
@@ -44,7 +44,7 @@ export async function getRecentDigests(): Promise<DigestArticle[]> {
     title: d.title,
     summary: d.summary || "",
     url: d.url,
-    source: d.source,
+    article_type: d.article_type,
     created_at: d.created_at,
   }));
 }

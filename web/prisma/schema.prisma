@@ -64,6 +64,7 @@ model Recommendation {
 
 model User {
   id              String           @id @db.VarChar
+  clerk_id        String?          @unique @db.VarChar
   email           String           @unique @db.VarChar
   name            String           @db.VarChar
   preferences     String
