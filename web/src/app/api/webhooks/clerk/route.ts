@@ -57,19 +57,21 @@ export async function POST(req: Request) {
 
     try {
       // Create user in database
-      const now = new Date();
-      const trialEndsAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+      // Create user in database
+      const preferences = JSON.stringify({
+        keywords: ["LLMs", "Agents", "Embeddings", "Fine-tuning", "RAG"],
+        negative_prompts: [],
+        detail_depth: "technical",
+      });
 
       await db.user.create({
         data: {
+          id: id,
           clerk_id: id,
           email: email,
           name: name,
-          keywords: ["LLMs", "Agents", "Embeddings", "Fine-tuning", "RAG"],
-          negative_prompts: [],
-          detail_depth: "technical",
+          preferences: preferences,
           subscription_status: "trial",
-          trial_ends_at: trialEndsAt,
           role: "user",
         },
       });
