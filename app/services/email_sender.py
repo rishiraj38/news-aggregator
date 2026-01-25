@@ -29,7 +29,7 @@ def send_email(subject: str, body_text: str, body_html: str = None, recipients: 
     
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = MY_EMAIL
+    msg["From"] = f"Helix AI <{MY_EMAIL}>"
     msg["To"] = ", ".join(recipients)
     
     part1 = MIMEText(body_text, "plain")
