@@ -1,4 +1,4 @@
-import { prisma } from "./db";
+import { db } from "./db";
 
 export interface DigestArticle {
   id: string;
@@ -14,7 +14,7 @@ export interface DigestArticle {
  * Returns top 10 most recent articles
  */
 export async function getRecentDigests(): Promise<DigestArticle[]> {
-  const digests = await prisma.digest.findMany({
+  const digests = await db.digest.findMany({
     where: {
       summary: {
         not: null,
@@ -36,10 +36,10 @@ export async function getRecentDigests(): Promise<DigestArticle[]> {
 
   // Filter out any articles with empty summaries
   const validDigests = digests
-    .filter((d) => d.summary && d.summary.length > 0)
+    .filter((d: any) => d.summary && d.summary.length > 0)
     .slice(0, 10);
 
-  return validDigests.map((d) => ({
+  return validDigests.map((d: any) => ({
     id: d.id,
     title: d.title,
     summary: d.summary || "",
