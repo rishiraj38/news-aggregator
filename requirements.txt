@@ -16,3 +16,4 @@ pydantic
 tenacity
 markdown
 html-to-markdown
+youtube-transcript-api
