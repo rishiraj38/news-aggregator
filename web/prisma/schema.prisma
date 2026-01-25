@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model AnthropicArticle {
+  guid         String    @id @db.VarChar
+  title        String    @db.VarChar
+  url          String    @db.VarChar
+  description  String?
+  published_at DateTime  @db.Timestamp(6)
+  category     String?   @db.VarChar
+  markdown     String?
+  created_at   DateTime? @db.Timestamp(6)
+
+  @@map("anthropic_articles")
+}
+
+model Digest {
+  id              String           @id @db.VarChar
+  article_type    String           @db.VarChar
+  article_id      String           @db.VarChar
+  url             String           @db.VarChar
+  title           String           @db.VarChar
+  summary         String
+  created_at      DateTime?        @db.Timestamp(6)
+  sent_at         DateTime?        @db.Timestamp(6)
+  recommendations Recommendation[]
+
+  @@map("digests")
+}
+
+model OpenaiArticle {
+  guid         String    @id @db.VarChar
+  title        String    @db.VarChar
+  url          String    @db.VarChar
+  description  String?
+  published_at DateTime  @db.Timestamp(6)
+  category     String?   @db.VarChar
+  created_at   DateTime? @db.Timestamp(6)
+
+  @@map("openai_articles")
+}
+
+model Recommendation {
+  id              String    @id @db.VarChar
+  user_id         String    @db.VarChar
+  digest_id       String    @db.VarChar
+  relevance_score String    @db.VarChar
+  rank            String    @db.VarChar
+  reasoning       String?
+  created_at      DateTime? @db.Timestamp(6)
+  
+  user            User      @relation(fields: [user_id], references: [id])
+  digest          Digest    @relation(fields: [digest_id], references: [id])
+
+  @@map("recommendations")
+}
+
+model User {
+  id              String           @id @db.VarChar
+  email           String           @unique @db.VarChar
+  name            String           @db.VarChar
+  preferences     String
+  title           String?          @db.VarChar
+  expertise_level String?          @db.VarChar
+  is_active       String?          @db.VarChar
+  subscription_status String       @default("trial") @db.VarChar
+  role            String           @default("user") @db.VarChar
+  admin_welcome_sent Boolean       @default(false)
+  created_at      DateTime?        @db.Timestamp(6)
+  recommendations Recommendation[]
+
+  @@map("users")
+}
+
+model YoutubeVideo {
+  video_id     String    @id @db.VarChar
+  title        String    @db.VarChar
+  url          String    @db.VarChar
+  channel_id   String    @db.VarChar
+  published_at DateTime  @db.Timestamp(6)
+  description  String?
+  transcript   String?
+  created_at   DateTime? @db.Timestamp(6)
+
+  @@map("youtube_videos")
+}

@@ -239,5 +239,9 @@ def send_email_to_self(subject: str, body: str):
     send_email(subject, body, recipients=[MY_EMAIL])
 
 
+def send_email_to_recipient(to_email: str, subject: str, body_text: str, body_html: str = None):
+    send_email(subject, body_text, body_html, recipients=[to_email])
+
+
 if __name__ == "__main__":
     send_email_to_self("Test from Python", "Hello from my script.")

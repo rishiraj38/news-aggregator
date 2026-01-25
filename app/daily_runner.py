@@ -9,6 +9,7 @@ from app.services.process_digest import process_digests
 from app.services.process_email import send_digest_email
 from app.database.models import Base
 from app.database.connection import engine
+from app.database.repository import Repository
 
 load_dotenv()
 
@@ -22,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 
 def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
-    start_time = datetime.now()
+    from datetime import timezone
+    start_time = datetime.now(timezone.utc)
     logger.info("=" * 60)
     logger.info("Starting Daily AI News Aggregator Pipeline")
     logger.info("=" * 60)
@@ -83,22 +85,102 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
             f"({digest_result['failed']} failed out of {digest_result['total']} total)"
         )
 
-        logger.info("\n[5/5] Generating and sending email digest...")
-        email_result = send_digest_email(hours=hours, top_n=top_n)
-        results["email"] = email_result
+        logger.info("\n[5/5] Generating personalized digests for users...")
+        
+        repo = Repository()
+        active_users = repo.get_active_users()
+        logger.info(f"Found {len(active_users)} active users")
 
-        if email_result.get("skipped"):
-            logger.info(f"✓ {email_result.get('message', 'No new digests to send')}")
-            results["success"] = True
-        elif email_result["success"]:
-            logger.info(
-                f"✓ Email sent successfully with {email_result['articles_count']} articles"
-            )
-            results["success"] = True
-        else:
-            logger.error(
-                f"✗ Failed to send email: {email_result.get('error', 'Unknown error')}"
-            )
+        if not active_users:
+            logger.info("No active users found. Skipping personalization.")
+        
+        from app.agent.curator_agent import CuratorAgent
+        from app.services.process_email import send_personalized_email
+        from app.services.user_service import UserService
+        
+        user_service = UserService()
+        
+        # Get all recent digests once
+        recent_digests = repo.get_recent_digests(hours=hours, exclude_sent=False)
+        if not recent_digests:
+             logger.info("No digests available to rank.")
+             results["user_digests"] = 0
+             return results
+
+        user_count = 0
+        email_count = 0
+        
+        for user in active_users:
+            try:
+                user_count += 1
+                logger.info(f"--- Processing for user: {user.name} ({user.email}) ---")
+                
+                # 1. Build User Profile
+                user_profile = user_service.get_user_profile(user)
+                
+                # 2. Rank Content
+                curator = CuratorAgent(user_profile)
+                ranked_articles = curator.rank_digests(recent_digests)
+                
+                if not ranked_articles:
+                    logger.info(f"No relevant articles found for {user.name}")
+                    continue
+
+                # 3. Save Recommendations
+                top_articles = ranked_articles[:top_n]
+                new_recommendations = []
+                final_articles_to_send = []
+
+                for article in top_articles:
+                    # Check if already recommended *before* creating call to avoid DB hit?
+                    # Repo handle check inside. We need to know if it was created NOW or existed.
+                    # Let's modify logic: check existence first? 
+                    # Simpler: Repo returns the object. We can assume if we are running daily, we only want to notify about stuff created in this run?
+                    # Or we check if the recommendation is 'fresh'.
+                    
+                    # Workaround: Check repo for existence manually or modify repo. 
+                    # Let's rely on exclude_sent=False fetching OLD digests, so existing recs exist.
+                    
+                    rec = repo.create_recommendation(
+                        user_id=user.id,
+                        digest_id=article.digest_id,
+                        relevance_score=article.relevance_score,
+                        rank=article.rank,
+                        reasoning=article.reasoning
+                    )
+                    
+                    # If the recommendation was just created, its created_at would be very close to now.
+                    # But reliable way: repo.create_recommendation could return a flag?
+                    # Let's assume for this fix: We only send articles if they haven't been recommended before.
+                    # Since create_recommendation handles idempotency, we can check if it was 'newly' made.
+                    # Hack: Check if rec.created_at > start_time
+                    
+                    if rec.created_at >= start_time.replace(tzinfo=rec.created_at.tzinfo):
+                        new_recommendations.append(rec)
+                        final_articles_to_send.append(article)
+                
+                logger.info(f"Saved {len(new_recommendations)} NEW recommendations for {user.name}")
+
+                if not final_articles_to_send:
+                     logger.info(f"No new recommendations for {user.name}. Skipping email.")
+                     continue
+
+                # 4. Send Email
+                # We need to adapt send_digest_email to take a user object and list of recommendations
+                email_result = send_personalized_email(user, user_profile, final_articles_to_send)
+                
+                if email_result["success"]:
+                    email_count += 1
+                    logger.info(f"✓ Email sent to {user.email}")
+                else:
+                    logger.error(f"✗ Failed to send email to {user.email}: {email_result.get('error')}")
+
+            except Exception as e:
+                logger.error(f"Error processing for user {user.email}: {e}")
+        
+        results["user_digests"] = user_count
+        results["emails_sent"] = email_count
+        results["success"] = True
 
     except Exception as e:
         logger.error(f"Pipeline failed with error: {e}", exc_info=True)
@@ -116,18 +198,18 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
     logger.info(f"Scraped: {results['scraping']}")
     logger.info(f"Processed: {results['processing']}")
     logger.info(f"Digests: {results['digests']}")
-    if results.get("email", {}).get("skipped"):
-        email_status = "Skipped"
-    elif results["success"]:
-        email_status = "Sent"
-    else:
-        email_status = "Failed"
-    logger.info(f"Email: {email_status}")
+    logger.info(f"Users Processed: {results.get('user_digests', 0)}")
+    logger.info(f"Emails Sent: {results.get('emails_sent', 0)}")
     logger.info("=" * 60)
 
     return results
 
 
 if __name__ == "__main__":
-    result = run_daily_pipeline(hours=24, top_n=10)
-    exit(0 if result["success"] else 1)
+    # Ensure tables exists
+    from app.database.models import Base
+    from app.database.connection import engine
+    Base.metadata.create_all(engine)
+    
+    result = run_daily_pipeline(hours=72, top_n=10) # 72 hours for demo
+    exit(0 if result.get("success", True) else 1)

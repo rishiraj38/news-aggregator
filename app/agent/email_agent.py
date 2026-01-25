@@ -59,7 +59,7 @@ Keep it concise (2-3 sentences for the introduction), friendly, and professional
 
 class EmailAgent(BaseAgent):
     def __init__(self, user_profile: dict):
-        super().__init__("gpt-4o-mini")
+        super().__init__("llama-3.3-70b-versatile")
         self.user_profile = user_profile
 
     def generate_introduction(self, ranked_articles: List) -> EmailIntroduction:
@@ -84,15 +84,25 @@ Top 10 ranked articles:
 Generate a greeting and introduction that previews these articles."""
 
         try:
-            response = self.client.responses.parse(
-                model=self.model,
-                instructions=EMAIL_PROMPT,
+            # Explicitly request JSON output in the system prompt or user prompt
+            json_schema_prompt = """
+OUTPUT JSON format:
+{
+  "greeting": "string",
+  "introduction": "string"
+}"""
+            response = self.get_completion(
+                messages=[
+                    {"role": "system", "content": EMAIL_PROMPT + "\n\nYou must output valid JSON."},
+                    {"role": "user", "content": user_prompt + json_schema_prompt}
+                ],
                 temperature=0.7,
-                input=user_prompt,
-                text_format=EmailIntroduction
+                response_format={"type": "json_object"}
             )
             
-            intro = response.output_parsed
+            content = response.choices[0].message.content
+            intro = EmailIntroduction.model_validate_json(content)
+            
             if not intro.greeting.startswith(f"Hey {self.user_profile['name']}"):
                 intro.greeting = f"Hey {self.user_profile['name']}, here is your daily digest of AI news for {current_date}."
             

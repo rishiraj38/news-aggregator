@@ -37,7 +37,7 @@ Rank articles from most relevant (rank 1) to least relevant. Ensure each article
 
 class CuratorAgent(BaseAgent):
     def __init__(self, user_profile: dict):
-        super().__init__("gpt-4.1")
+        super().__init__("llama-3.3-70b-versatile")
         self.user_profile = user_profile
         self.system_prompt = self._build_system_prompt()
 
@@ -72,19 +72,33 @@ Preferences:
 
 {digest_list}
 
-Provide a relevance score (0.0-10.0) and rank (1-{len(digests)}) for each article, ordered from most to least relevant."""
+Provide a relevance score (0.0-10.0) and rank (1-{len(digests)}) for each article, ordered from most to least relevant.
+
+Output strictly valid JSON matching this schema:
+{{
+  "articles": [
+    {{
+      "digest_id": "string",
+      "relevance_score": float,
+      "rank": int,
+      "reasoning": "string"
+    }}
+  ]
+}}"""
 
         try:
-            response = self.client.responses.parse(
-                model=self.model,
-                instructions=self.system_prompt,
+            response = self.get_completion(
+                messages=[
+                    {"role": "system", "content": self.system_prompt + "\n\nYou must output valid JSON."},
+                    {"role": "user", "content": user_prompt}
+                ],
                 temperature=0.3,
-                input=user_prompt,
-                text_format=RankedDigestList
+                response_format={"type": "json_object"}
             )
             
-            ranked_list = response.output_parsed
-            return ranked_list.articles if ranked_list else []
+            content = response.choices[0].message.content
+            ranked_list = RankedDigestList.model_validate_json(content)
+            return ranked_list.articles
         except Exception as e:
             print(f"Error ranking digests: {e}")
             return []

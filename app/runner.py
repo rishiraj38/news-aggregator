@@ -1,5 +1,4 @@
 from typing import List, Callable, Any
-from .config import YOUTUBE_CHANNELS
 from .scrapers.youtube import YouTubeScraper, ChannelVideo
 from .scrapers.openai import OpenAIScraper
 from .scrapers.anthropic import AnthropicScraper
@@ -9,25 +8,55 @@ from .database.repository import Repository
 def _save_youtube_videos(
     scraper: YouTubeScraper, repo: Repository, hours: int
 ) -> List[ChannelVideo]:
+    from .config import SEARCH_QUERIES
+    from app.services.search_agent import SearchAgent
+    from datetime import datetime
+
+    agent = SearchAgent(top_n=5)
     videos = []
     video_dicts = []
-    for channel_id in YOUTUBE_CHANNELS:
-        channel_videos = scraper.get_latest_videos(channel_id, hours=hours)
-        videos.extend(channel_videos)
-        video_dicts.extend(
-            [
+    seen_ids = set()
+
+    for query in SEARCH_QUERIES:
+        candidates = agent.search_videos(query)
+        for cand in candidates:
+            vid_id = cand["video_id"]
+            if vid_id in seen_ids:
+                continue
+            seen_ids.add(vid_id)
+            
+            # Get Transcript
+            transcript = scraper.get_transcript(vid_id)
+            
+            # Parse Date
+            try:
+                pub_date = datetime.strptime(cand["published_at"], "%Y%m%d")
+            except (ValueError, TypeError):
+                pub_date = datetime.now()
+
+            # Create Object
+            v = ChannelVideo(
+                title=cand["title"],
+                url=cand["url"],
+                video_id=vid_id,
+                published_at=pub_date,
+                description=cand.get("description", ""),
+                transcript=transcript.text if transcript else None
+            )
+            
+            videos.append(v)
+            video_dicts.append(
                 {
                     "video_id": v.video_id,
                     "title": v.title,
                     "url": v.url,
-                    "channel_id": channel_id,
+                    "channel_id": cand.get("channel_id", "Unknown"),
                     "published_at": v.published_at,
                     "description": v.description,
                     "transcript": v.transcript,
                 }
-                for v in channel_videos
-            ]
-        )
+            )
+            
     if video_dicts:
         repo.bulk_create_youtube_videos(video_dicts)
     return videos

@@ -21,22 +21,32 @@ class DigestOutput(BaseModel):
 
 class DigestAgent(BaseAgent):
     def __init__(self):
-        super().__init__("gpt-4o-mini")
+        super().__init__("llama-3.3-70b-versatile")
         self.system_prompt = PROMPT
 
     def generate_digest(self, title: str, content: str, article_type: str) -> Optional[DigestOutput]:
         try:
-            user_prompt = f"Create a digest for this {article_type}: \n Title: {title} \n Content: {content[:8000]}"
+            user_prompt = f"""Create a digest for this {article_type}:
+Title: {title}
+Content: {content[:8000]}
 
-            response = self.client.responses.parse(
-                model=self.model,
-                instructions=self.system_prompt,
+Output strictly valid JSON matching this schema:
+{{
+  "title": "Compelling title (5-10 words)",
+  "summary": "2-3 sentence summary"
+}}"""
+
+            response = self.get_completion(
+                messages=[
+                    {"role": "system", "content": self.system_prompt + "\n\nYou must output valid JSON."},
+                    {"role": "user", "content": user_prompt}
+                ],
                 temperature=0.7,
-                input=user_prompt,
-                text_format=DigestOutput
+                response_format={"type": "json_object"}
             )
             
-            return response.output_parsed
+            content = response.choices[0].message.content
+            return DigestOutput.model_validate_json(content)
         except Exception as e:
             print(f"Error generating digest: {e}")
             return None

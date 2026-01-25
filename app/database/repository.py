@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, Digest
+from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, Digest, User, Recommendation
 from .connection import get_session
 
 
@@ -319,6 +319,26 @@ class Repository:
             for d in digests
         ]
 
+    def get_digests_by_ids(self, digest_ids: List[str]) -> List[Dict[str, Any]]:
+        if not digest_ids:
+            return []
+            
+        digests = self.session.query(Digest).filter(Digest.id.in_(digest_ids)).all()
+        
+        return [
+            {
+                "id": d.id,
+                "article_type": d.article_type,
+                "article_id": d.article_id,
+                "url": d.url,
+                "title": d.title,
+                "summary": d.summary,
+                "created_at": d.created_at,
+                "sent_at": d.sent_at,
+            }
+            for d in digests
+        ]
+
     def mark_digests_as_sent(self, digest_ids: List[str]) -> int:
         sent_time = datetime.now(timezone.utc)
         updated = (
@@ -328,3 +348,116 @@ class Repository:
         )
         self.session.commit()
         return updated
+
+    # User Management Methods
+    def create_user(
+        self,
+        email: str,
+        name: str,
+        preferences: str,
+        title: str = "",
+        expertise_level: str = "Intermediate",
+    ) -> User:
+        import uuid
+        user = User(
+            id=str(uuid.uuid4()),
+            email=email,
+            name=name,
+            preferences=preferences,
+            title=title,
+            expertise_level=expertise_level,
+        )
+        self.session.add(user)
+        self.session.commit()
+        return user
+
+    def get_user_by_email(self, email: str) -> Optional[User]:
+        return self.session.query(User).filter_by(email=email).first()
+
+    def get_active_users(self) -> List[User]:
+        # String 'true' because sqlite/simple mapping. In production use real boolean.
+        return self.session.query(User).filter(User.is_active == "true").all()
+
+    def update_user_preferences(self, user_id: str, new_preferences: str) -> bool:
+        user = self.session.query(User).filter_by(id=user_id).first()
+        if user:
+            user.preferences = new_preferences
+            self.session.commit()
+            return True
+    def update_user_status(self, user_id: str, status: str) -> bool:
+        user = self.session.query(User).filter_by(id=user_id).first()
+        if user:
+            user.subscription_status = status
+            self.session.commit()
+            return True
+        return False
+
+    def update_user_admin_welcome(self, user_id: str) -> bool:
+        user = self.session.query(User).filter_by(id=user_id).first()
+        if user:
+            user.admin_welcome_sent = "true"
+            self.session.commit()
+            return True
+        return False
+
+    # Recommendation Methods
+    def create_recommendation(
+        self,
+        user_id: str,
+        digest_id: str,
+        relevance_score: float,
+        rank: int,
+        reasoning: str,
+    ) -> Recommendation:
+        import uuid
+        # Check if already recommended
+        existing = (
+            self.session.query(Recommendation)
+            .filter_by(user_id=user_id, digest_id=digest_id)
+            .first()
+        )
+        if existing:
+            return existing
+
+        # Validate digest exists to prevent FK violation/orphans
+        digest = self.session.query(Digest).filter_by(id=digest_id).first()
+        if not digest:
+            print(f"⚠️ Warning: Attempted to recommend missing digest {digest_id}")
+            return None
+
+        rec = Recommendation(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            digest_id=digest_id,
+            relevance_score=str(relevance_score),
+            rank=str(rank),
+            reasoning=reasoning,
+            created_at=datetime.now(timezone.utc),
+        )
+        self.session.add(rec)
+        self.session.commit()
+        return rec
+
+    def get_user_feed(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        Get the 'Feed' for a user: Recommendations joined with Digest details.
+        Ordered by date (newest first) then rank (highest relevance).
+        """
+        results = (
+            self.session.query(Recommendation, Digest)
+            .join(Digest, Recommendation.digest_id == Digest.id)
+            .filter(Recommendation.user_id == user_id)
+            .order_by(Digest.created_at.desc(), Recommendation.rank.asc())
+            .limit(limit)
+            .all()
+        )
+
+        feed = []
+        for rec, digest in results:
+            feed.append({
+                "digest": digest,
+                "relevance_score": float(rec.relevance_score),
+                "reasoning": rec.reasoning,
+                "rank": int(rec.rank)
+            })
+        return feed

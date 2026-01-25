@@ -1,0 +1,17 @@
+sqlalchemy
+psycopg2-binary
+python-dotenv
+yt-dlp
+groq
+openai
+anthropic
+prisma
+requests
+beautifulsoup4
+lxml
+feedparser
+google-api-python-client
+isodate
+pydantic
+tenacity
+markdown

@@ -1,0 +1,37 @@
+name: Daily AI Digest
+
+on:
+  schedule:
+    - cron: "0 12 * * *" # Runs daily at 12:00 UTC
+  workflow_dispatch: # Allows manual trigger from GitHub UI
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install uv (Fast Package Manager)
+        uses: astral-sh/setup-uv@v1
+
+      - name: Install Dependencies
+        run: |
+          uv pip install -r requirements.txt --system
+
+      - name: Run Daily Pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          MY_EMAIL: ${{ secrets.MY_EMAIL }}
+          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          WEBSHARE_USERNAME: ${{ secrets.WEBSHARE_USERNAME }}
+          WEBSHARE_PASSWORD: ${{ secrets.WEBSHARE_PASSWORD }}
+        run: |
+          python -m app.daily_runner

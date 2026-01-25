@@ -54,3 +54,31 @@ class Digest(Base):
     summary = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     sent_at = Column(DateTime, nullable=True)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True)  # UUID
+    email = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    preferences = Column(Text, nullable=False)  # JSON string of profile dict
+    title = Column(String, nullable=True)
+    expertise_level = Column(String, default="Intermediate")
+    is_active = Column(String, default="true")  # Boolean stored as string for simplicity
+    subscription_status = Column(String, default="trial")
+    role = Column(String, default="user")
+    admin_welcome_sent = Column(String, default="false") # Boolean stored as string in this repo's pattern?
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Recommendation(Base):
+    __tablename__ = "recommendations"
+
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
+    digest_id = Column(String, nullable=False)
+    relevance_score = Column(String, nullable=False)  # Float stored as string
+    rank = Column(String, nullable=False)  # Int stored as string
+    reasoning = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
