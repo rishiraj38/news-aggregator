@@ -13,6 +13,7 @@
     "@clerk/nextjs": "^6.36.10",
     "@prisma/client": "^5.22.0",
     "@types/nodemailer": "^7.0.5",
+    "@vercel/analytics": "^1.6.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.563.0",
     "next": "16.1.4",
