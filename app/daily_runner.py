@@ -186,7 +186,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
         logger.error(f"Pipeline failed with error: {e}", exc_info=True)
         results["error"] = str(e)
 
-    end_time = datetime.now()
+    end_time = datetime.now(timezone.utc)
     duration = (end_time - start_time).total_seconds()
     results["end_time"] = end_time.isoformat()
     results["duration_seconds"] = duration
