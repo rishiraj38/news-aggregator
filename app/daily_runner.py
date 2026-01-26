@@ -142,8 +142,11 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 # Refresh user from DB to get latest flags (prevents stale data)
                 repo.session.refresh(user)
 
-                # 0. Check for New Admin Promotion
-                if user.role == "admin" and user.admin_welcome_sent != "true":
+                # 0. Check for New Admin Promotion - ROBUST CHECK
+                # Handle "True", "true", True (bool), etc.
+                admin_flag = str(user.admin_welcome_sent).lower()
+                
+                if user.role == "admin" and admin_flag != "true":
                     from app.services.process_email import send_admin_welcome_email
                     logger.info(f"User {user.email} is a new admin. Sending welcome email...")
                     if send_admin_welcome_email(user):
