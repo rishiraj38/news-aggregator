@@ -188,7 +188,10 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 unseen_digests = [d for d in recent_digests if d['id'] not in seen_digest_ids]
                 
                 if not unseen_digests:
-                    logger.info(f"No new digests for {user.name} (All {len(recent_digests)} recent items already recommended). Skipping.")
+                    msg = f"No new digests for {user.name} (All {len(recent_digests)} recent items already recommended). Skipping."
+                    logger.info(msg)
+                    log_progress(msg)
+                    import time; time.sleep(0.5) # Small sleep to avoid instant loops looking like bugs
                     continue
                 
                 logger.info(f"Ranking {len(unseen_digests)} new digests for {user.name} (out of {len(recent_digests)} total recent)...")
@@ -198,7 +201,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 ranked_articles = curator.rank_digests(unseen_digests)
                 
                 if not ranked_articles:
-                    logger.info(f"No relevant articles found for {user.name} in new batch")
+                    msg = f"No relevant articles found for {user.name} in new batch. Skipping."
+                    logger.info(msg)
+                    log_progress(msg)
                     continue
 
                 # 3. Save Recommendations
@@ -241,7 +246,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 logger.info(f"Saved {len(new_recommendations)} NEW recommendations for {user.name}")
 
                 if not final_articles_to_send:
-                     logger.info(f"No new recommendations for {user.name}. Skipping email.")
+                     msg = f"No new recommendations for {user.name}. Skipping email."
+                     logger.info(msg)
+                     log_progress(msg)
                      continue
 
                 # 4. Send Email
