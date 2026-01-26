@@ -17,7 +17,9 @@ export function PipelineStatus() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const API_URL =
+    process.env.NEXT_PUBLIC_API_URL ||
+    "https://daily-ai-digest-8nrz.onrender.com";
 
   const fetchStatus = async () => {
     try {
