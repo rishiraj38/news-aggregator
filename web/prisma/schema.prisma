@@ -73,11 +73,24 @@ model User {
   is_active       String?          @db.VarChar
   subscription_status String       @default("trial") @db.VarChar
   role            String           @default("user") @db.VarChar
-  admin_welcome_sent Boolean       @default(false)
+  admin_welcome_sent String?       @default("false") @db.VarChar
   created_at      DateTime?        @db.Timestamp(6)
   recommendations Recommendation[]
 
   @@map("users")
+}
+
+model GeneralRSSArticle {
+  guid         String    @id @db.VarChar
+  source       String    @db.VarChar
+  title        String    @db.VarChar
+  url          String    @db.VarChar
+  description  String?
+  published_at DateTime  @db.Timestamp(6)
+  category     String?   @db.VarChar
+  created_at   DateTime? @db.Timestamp(6)
+
+  @@map("general_rss_articles")
 }
 
 model YoutubeVideo {
