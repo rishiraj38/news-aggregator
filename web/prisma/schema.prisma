@@ -56,8 +56,8 @@ model Recommendation {
   reasoning       String?
   created_at      DateTime? @db.Timestamp(6)
   
-  user            User      @relation(fields: [user_id], references: [id])
-  digest          Digest    @relation(fields: [digest_id], references: [id])
+  user            User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  digest          Digest    @relation(fields: [digest_id], references: [id], onDelete: Cascade)
 
   @@map("recommendations")
 }

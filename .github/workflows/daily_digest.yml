@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: "0 15 * * *" # Runs daily at 15:00 UTC (8:30 PM IST)
   workflow_dispatch: # Allows manual trigger from GitHub UI
+  # Cron schedule: Runs daily (best effort by GitHub)
 
 jobs:
   run-pipeline:
