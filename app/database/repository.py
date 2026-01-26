@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, Digest, User, Recommendation
+from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, GeneralRSSArticle, Digest, User, Recommendation
 from .connection import get_session
 
 
@@ -153,6 +153,23 @@ class Repository:
             formatted_articles, AnthropicArticle, "guid", "guid"
         )
 
+    def bulk_create_general_rss_articles(self, articles: List[dict], source: str) -> int:
+        formatted_articles = [
+            {
+                "guid": a["guid"],
+                "source": source,
+                "title": a["title"],
+                "url": a["url"],
+                "published_at": a["published_at"],
+                "description": a.get("description", ""),
+                "category": a.get("category"),
+            }
+            for a in articles
+        ]
+        return self._bulk_create_items(
+            formatted_articles, GeneralRSSArticle, "guid", "guid"
+        )
+
     def get_anthropic_articles_without_markdown(
         self, limit: Optional[int] = None
     ) -> List[AnthropicArticle]:
@@ -251,6 +268,22 @@ class Repository:
                         "title": article.title,
                         "url": article.url,
                         "content": article.markdown or article.description or "",
+                        "published_at": article.published_at,
+                    }
+                )
+
+        # General RSS Articles
+        general_articles = self.session.query(GeneralRSSArticle).all()
+        for article in general_articles:
+            key = f"{article.source}:{article.guid}"
+            if key not in seen_ids:
+                articles.append(
+                    {
+                        "type": article.source,
+                        "id": article.guid,
+                        "title": article.title,
+                        "url": article.url,
+                        "content": article.description or "",
                         "published_at": article.published_at,
                     }
                 )
@@ -437,6 +470,17 @@ class Repository:
         self.session.add(rec)
         self.session.commit()
         return rec
+
+    def get_user_recommended_digest_ids(self, user_id: str) -> List[str]:
+        """
+        Returns a list of digest IDs that have already been recommended to the user.
+        """
+        return [
+            rec.digest_id
+            for rec in self.session.query(Recommendation.digest_id)
+            .filter_by(user_id=user_id)
+            .all()
+        ]
 
     def get_user_feed(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """

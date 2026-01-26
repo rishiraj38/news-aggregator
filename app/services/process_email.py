@@ -191,3 +191,53 @@ def send_personalized_email(user, user_profile: dict, top_articles: list) -> dic
     except Exception as e:
         logger.error(f"Error sending personalized email: {e}")
         return {"success": False, "error": str(e)}
+
+
+def send_admin_welcome_email(user) -> bool:
+    """
+    Sends a welcome email to a newly promoted admin.
+    """
+    try:
+        from app.services.email_sender import send_email_to_recipient
+        
+        subject = "Welcome to Helix Admin Access 🚀"
+        
+        body_html = f"""
+        <h1>Welcome to Helix Admin, {user.name}!</h1>
+        <p>You have been upgraded to <strong>Administrator</strong> status.</p>
+        <p><strong>Your Privileges:</strong></p>
+        <ul>
+            <li>Unlimited Access (No 30-day trial expiry)</li>
+            <li>Priority Delivery</li>
+            <li>Access to all experimental features</li>
+        </ul>
+        <p>Thank you for leading the way.</p>
+        <p>Best,<br>The Helix Team</p>
+        """
+        
+        body_text = f"""
+        Welcome to Helix Admin, {user.name}!
+        
+        You have been upgraded to Administrator status.
+        
+        Your Privileges:
+        - Unlimited Access (No 30-day trial expiry)
+        - Priority Delivery
+        - Access to all experimental features
+        
+        Thank you for leading the way.
+        
+        Best,
+        The Helix Team
+        """
+        
+        send_email_to_recipient(
+            to_email=user.email,
+            subject=subject,
+            body_text=body_text,
+            body_html=body_html
+        )
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send admin welcome email to {user.email}: {e}")
+        return False

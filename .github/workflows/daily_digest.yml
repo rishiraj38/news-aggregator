@@ -2,8 +2,8 @@ name: Daily AI Digest
 
 on:
   schedule:
-    - cron: "30 13 * * *" # Runs daily at 13:30 UTC (7:00 PM IST)
-  workflow_dispatch:
+    - cron: "0 15 * * *" # Runs daily at 15:00 UTC (8:30 PM IST)
+  workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
   run-pipeline:
@@ -31,6 +31,6 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           MY_EMAIL: ${{ secrets.MY_EMAIL }}
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-          
+
         run: |
           python -m app.daily_runner

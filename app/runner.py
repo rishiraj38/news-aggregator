@@ -2,6 +2,8 @@ from typing import List, Callable, Any
 from .scrapers.youtube import YouTubeScraper, ChannelVideo
 from .scrapers.openai import OpenAIScraper
 from .scrapers.anthropic import AnthropicScraper
+from .scrapers.techcrunch import TechCrunchScraper
+from .scrapers.theverge import TheVergeScraper
 from .database.repository import Repository
 
 
@@ -93,6 +95,20 @@ SCRAPER_REGISTRY = [
         "anthropic",
         AnthropicScraper(),
         lambda s, r, h: _save_rss_articles(s, r, h, r.bulk_create_anthropic_articles),
+    ),
+    (
+        "techcrunch",
+        TechCrunchScraper(),
+        lambda s, r, h: _save_rss_articles(
+            s, r, h, lambda a: r.bulk_create_general_rss_articles(a, "techcrunch")
+        ),
+    ),
+    (
+        "theverge",
+        TheVergeScraper(),
+        lambda s, r, h: _save_rss_articles(
+            s, r, h, lambda a: r.bulk_create_general_rss_articles(a, "theverge")
+        ),
     ),
 ]
 

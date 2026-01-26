@@ -114,16 +114,34 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
             try:
                 user_count += 1
                 logger.info(f"--- Processing for user: {user.name} ({user.email}) ---")
-                
-                # 1. Build User Profile
+
+                # 0. Check for New Admin Promotion
+                if user.role == "admin" and user.admin_welcome_sent != "true":
+                    from app.services.process_email import send_admin_welcome_email
+                    logger.info(f"User {user.email} is a new admin. Sending welcome email...")
+                    if send_admin_welcome_email(user):
+                        repo.update_user_admin_welcome(user.id)
+                        logger.info("✓ Admin welcome email sent and flagged.")
+                    else:
+                        logger.error("✗ Failed to send admin welcome email.")
                 user_profile = user_service.get_user_profile(user)
                 
+                # 1.5 Filter out already seen digests
+                seen_digest_ids = set(repo.get_user_recommended_digest_ids(user.id))
+                unseen_digests = [d for d in recent_digests if d['id'] not in seen_digest_ids]
+                
+                if not unseen_digests:
+                    logger.info(f"No new digests for {user.name} (All {len(recent_digests)} recent items already recommended). Skipping.")
+                    continue
+                
+                logger.info(f"Ranking {len(unseen_digests)} new digests for {user.name}...")
+
                 # 2. Rank Content
                 curator = CuratorAgent(user_profile)
-                ranked_articles = curator.rank_digests(recent_digests)
+                ranked_articles = curator.rank_digests(unseen_digests)
                 
                 if not ranked_articles:
-                    logger.info(f"No relevant articles found for {user.name}")
+                    logger.info(f"No relevant articles found for {user.name} in new batch")
                     continue
 
                 # 3. Save Recommendations
@@ -155,6 +173,10 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
                     # Since create_recommendation handles idempotency, we can check if it was 'newly' made.
                     # Hack: Check if rec.created_at > start_time
                     
+                    if not rec:
+                        logger.warning(f"Skipping invalid digest recommendation: {article.digest_id}")
+                        continue
+
                     if rec.created_at >= start_time.replace(tzinfo=rec.created_at.tzinfo):
                         new_recommendations.append(rec)
                         final_articles_to_send.append(article)
@@ -177,6 +199,10 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
 
             except Exception as e:
                 logger.error(f"Error processing for user {user.email}: {e}")
+            
+            # Rate Limit Protection (Groq has RPM limits)
+            import time
+            time.sleep(2)
         
         results["user_digests"] = user_count
         results["emails_sent"] = email_count
