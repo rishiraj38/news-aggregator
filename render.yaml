@@ -1,25 +1,19 @@
-databases:
-  - name: ai-news-aggregator-db
-    databaseName: ai_news_aggregator
-    user: ai_news_user
-    plan: free
-
 services:
   - type: cron
-    name: daily-digest-job
-    env: docker
-    dockerfilePath: ./Dockerfile
-    schedule: "0 5 * * *"
-    dockerCommand: python main.py
+    name: daily-ai-digest
+    env: python
+    schedule: "0 15 * * *" # Runs at 15:00 UTC (8:30 PM IST)
+    buildCommand: "uv pip install -r requirements.txt --system"
+    startCommand: "python -m app.daily_runner"
+    plan: starter # ~$1/month implied cost for cron
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
       - key: DATABASE_URL
-        fromDatabase:
-          name: ai-news-aggregator-db
-          property: connectionString
-      - key: OPENAI_API_KEY
+        sync: false # User must provide this in dashboard
+      - key: GROQ_API_KEY
         sync: false
       - key: MY_EMAIL
         sync: false
       - key: APP_PASSWORD
         sync: false
-
