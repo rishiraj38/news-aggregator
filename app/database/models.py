@@ -95,3 +95,15 @@ class Recommendation(Base):
     rank = Column(String, nullable=False)  # Int stored as string
     reasoning = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PipelineRun(Base):
+    __tablename__ = "pipeline_runs"
+
+    id = Column(String, primary_key=True)  # UUID
+    start_time = Column(DateTime, default=datetime.utcnow)
+    end_time = Column(DateTime, nullable=True)
+    status = Column(String, default="RUNNING")  # RUNNING, SUCCESS, FAILED
+    log_summary = Column(Text, default="")
+    users_processed = Column(String, default="0")  # Int stored as string for consistency
+    created_at = Column(DateTime, default=datetime.utcnow)

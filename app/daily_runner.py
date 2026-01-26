@@ -53,15 +53,34 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         "processing": {},
         "digests": {},
         "email": {},
+        "email": {},
         "success": False,
     }
+
+    # Initialize Repository and logging
+    repo = Repository()
+    try:
+        pipeline_run = repo.create_pipeline_run()
+        run_id = pipeline_run.id
+    except Exception as e:
+        logger.error(f"Failed to create pipeline run record: {e}")
+        run_id = None
+
+    def log_progress(msg: str):
+        logger.info(msg)
+        if run_id:
+            try:
+                repo.update_pipeline_run(run_id, log_entry=msg)
+            except Exception:
+                pass
+
 
     try:
         logger.info("\n[0/5] Ensuring database tables exist...")
         try:
             with engine.connect() as conn:
                 Base.metadata.create_all(engine)
-                logger.info("✓ Database tables verified/created")
+                log_progress("✓ Database tables verified/created")
         except Exception as e:
             logger.error(f"Failed to create database tables: {e}")
             raise
@@ -69,8 +88,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         if not force_scrape and _is_scrape_recent():
             logger.info("\n[1/5] Using cached scrape data (Last scrape < 60 mins ago). Skipping new checks.")
             results["scraping"] = {"status": "cached"}
+            log_progress("Using cached scrape data.")
         else:
-            logger.info("\n[1/5] Scraping articles from sources...")
+            log_progress("\n[1/5] Scraping articles from sources...")
             scraping_results = run_scrapers(hours=hours)
             results["scraping"] = {
                 "youtube": len(scraping_results.get("youtube", [])),
@@ -85,7 +105,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             _update_last_scrape()
 
 
-        logger.info("\n[2/5] Processing Anthropic markdown...")
+        log_progress("\n[2/5] Processing Anthropic markdown...")
         anthropic_result = process_anthropic_markdown()
         results["processing"]["anthropic"] = anthropic_result
         logger.info(
@@ -93,7 +113,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             f"({anthropic_result['failed']} failed)"
         )
 
-        logger.info("\n[3/5] Processing YouTube transcripts...")
+        log_progress("\n[3/5] Processing YouTube transcripts...")
         youtube_result = process_youtube_transcripts()
         results["processing"]["youtube"] = youtube_result
         logger.info(
@@ -101,7 +121,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             f"({youtube_result['unavailable']} unavailable)"
         )
 
-        logger.info("\n[4/5] Creating digests for articles...")
+        log_progress("\n[4/5] Creating digests for articles...")
         digest_result = process_digests()
         results["digests"] = digest_result
         logger.info(
@@ -109,11 +129,11 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             f"({digest_result['failed']} failed out of {digest_result['total']} total)"
         )
 
-        logger.info("\n[5/5] Generating personalized digests for users...")
+        log_progress("\n[5/5] Generating personalized digests for users...")
         
-        repo = Repository()
+        # repo already initialized above
         active_users = repo.get_active_users()
-        logger.info(f"Found {len(active_users)} active users")
+        log_progress(f"Found {len(active_users)} active users")
 
         if not active_users:
             logger.info("No active users found. Skipping personalization.")
@@ -137,6 +157,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         for user in active_users:
             try:
                 user_count += 1
+                if run_id:
+                     repo.update_pipeline_run(run_id, users_processed=user_count)
+                
                 logger.info(f"--- Processing for user: {user.name} ({user.email}) ---")
 
                 # Refresh user from DB to get latest flags (prevents stale data)
@@ -227,7 +250,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 
                 if email_result["success"]:
                     email_count += 1
-                    logger.info(f"✓ Email sent to {user.email}")
+                if email_result["success"]:
+                    email_count += 1
+                    log_progress(f"✓ Email sent to {user.email}")
                 else:
                     logger.error(f"✗ Failed to send email to {user.email}: {email_result.get('error')}")
 
@@ -241,9 +266,14 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         results["user_digests"] = user_count
         results["emails_sent"] = email_count
         results["success"] = True
+        
+        if run_id:
+            repo.update_pipeline_run(run_id, status="SUCCESS", log_entry="Pipeline finished successfully.")
 
     except Exception as e:
         logger.error(f"Pipeline failed with error: {e}", exc_info=True)
+        if run_id:
+            repo.update_pipeline_run(run_id, status="FAILED", log_entry=f"Error: {str(e)}")
         results["error"] = str(e)
 
     end_time = datetime.now(timezone.utc)

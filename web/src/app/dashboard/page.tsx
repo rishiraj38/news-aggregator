@@ -10,6 +10,7 @@ import {
   Lock,
   ChevronDown,
 } from "lucide-react";
+import { PipelineStatus } from "@/components/PipelineStatus";
 
 export default async function Dashboard() {
   const user = await currentUser();
@@ -113,6 +114,11 @@ export default async function Dashboard() {
             </div>
           </div>
         </header>
+
+        {/* System Status */}
+        <div className="mb-8">
+          <PipelineStatus />
+        </div>
 
         {/* Locked Settings UI */}
         <section className="mb-12 bg-[#161616] border border-white/5 rounded-xl p-6 relative overflow-hidden group">

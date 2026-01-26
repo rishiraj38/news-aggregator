@@ -105,3 +105,15 @@ model YoutubeVideo {
 
   @@map("youtube_videos")
 }
+
+model PipelineRun {
+  id              String    @id @db.VarChar
+  start_time      DateTime  @db.Timestamp(6)
+  end_time        DateTime? @db.Timestamp(6)
+  status          String    @db.VarChar
+  log_summary     String?
+  users_processed String    @default("0") @db.VarChar
+  created_at      DateTime? @db.Timestamp(6)
+
+  @@map("pipeline_runs")
+}

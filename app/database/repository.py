@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, GeneralRSSArticle, Digest, User, Recommendation
+from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, GeneralRSSArticle, Digest, User, Recommendation, PipelineRun
 from .connection import get_session
 
 
@@ -504,4 +504,47 @@ class Repository:
                 "reasoning": rec.reasoning,
                 "rank": int(rec.rank)
             })
+
         return feed
+
+    # Pipeline Monitoring Methods
+    def create_pipeline_run(self) -> PipelineRun:
+        import uuid
+        run = PipelineRun(
+            id=str(uuid.uuid4()),
+            start_time=datetime.now(timezone.utc),
+            status="RUNNING",
+            log_summary="Pipeline started...",
+            users_processed="0"
+        )
+        self.session.add(run)
+        self.session.commit()
+        return run
+
+    def update_pipeline_run(
+        self, 
+        run_id: str, 
+        status: Optional[str] = None, 
+        log_entry: Optional[str] = None, 
+        users_processed: Optional[int] = None
+    ):
+        run = self.session.query(PipelineRun).filter_by(id=run_id).first()
+        if run:
+            if status:
+                run.status = status
+                if status in ["SUCCESS", "FAILED"]:
+                    run.end_time = datetime.now(timezone.utc)
+            
+            if log_entry:
+                timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+                # Append to existing log summary
+                current_log = run.log_summary or ""
+                # Keep log size manageable (last 5000 chars?) - For now just append
+                run.log_summary = f"{current_log}\n[{timestamp}] {log_entry}".strip()
+            
+            if users_processed is not None:
+                run.users_processed = str(users_processed)
+            
+            self.session.commit()
+            return True
+        return False

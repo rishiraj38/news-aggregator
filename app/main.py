@@ -3,14 +3,23 @@ import logging
 import os
 from typing import Optional
 from app.daily_runner import run_daily_pipeline
-from app.database.connection import engine
-from app.database.models import Base
+from app.database.connection import engine, get_session
+from app.database.models import Base, PipelineRun
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all for now to support Vercel/Local
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Ensure DB tables exist on startup
 @app.on_event("startup")
@@ -39,6 +48,26 @@ async def trigger_digest(background_tasks: BackgroundTasks, x_api_key: Optional[
     background_tasks.add_task(run_daily_pipeline_task)
     
     return {"message": "Pipeline triggered in background"}
+
+@app.get("/api/pipeline/status")
+def get_pipeline_status():
+    session = get_session()
+    try:
+        # Get latest run
+        run = session.query(PipelineRun).order_by(PipelineRun.start_time.desc()).first()
+        if not run:
+            return {"status": "IDLE", "message": "No runs recorded yet."}
+        
+        return {
+            "id": run.id,
+            "status": run.status,
+            "start_time": run.start_time,
+            "end_time": run.end_time,
+            "log_summary": run.log_summary,
+            "users_processed": run.users_processed
+        }
+    finally:
+        session.close()
 
 def run_daily_pipeline_task():
     try:
