@@ -115,10 +115,12 @@ export default async function Dashboard() {
           </div>
         </header>
 
-        {/* System Status */}
-        <div className="mb-8">
-          <PipelineStatus />
-        </div>
+        {/* System Status (Admin Only) */}
+        {dbUser?.role === "admin" && (
+          <div className="mb-8">
+            <PipelineStatus />
+          </div>
+        )}
 
         {/* Locked Settings UI */}
         <section className="mb-12 bg-[#161616] border border-white/5 rounded-xl p-6 relative overflow-hidden group">
