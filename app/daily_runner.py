@@ -160,7 +160,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 if run_id:
                      repo.update_pipeline_run(run_id, users_processed=user_count)
                 
-                logger.info(f"--- Processing for user: {user.name} ({user.email}) ---")
+                msg = f"--- Processing for user: {user.name} ({user.email}) ---"
+                logger.info(msg)
+                log_progress(msg)
 
                 # Refresh user from DB to get latest flags (prevents stale data)
                 repo.session.refresh(user)

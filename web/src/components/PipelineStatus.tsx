@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, RefreshCw, Clock } from "lucide-react";
 
 type PipelineStatus = {
   id: string;
@@ -120,6 +120,16 @@ export function PipelineStatus() {
           <p className="text-xs text-center text-muted-foreground animate-pulse">
             Pipeline is active. Refreshing live...
           </p>
+        )}
+
+        {!isRunning && (
+          <div className="mt-4 pt-3 border-t border-zinc-800 flex items-center justify-between text-xs text-muted-foreground">
+            <span>Status: System Idle</span>
+            <span className="flex items-center gap-1.5">
+              <Clock className="w-3 h-3" />
+              Next Scheduled Run: Today at 7:00 PM IST
+            </span>
+          </div>
         )}
       </div>
     </div>
