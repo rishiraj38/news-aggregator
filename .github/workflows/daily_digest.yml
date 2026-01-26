@@ -18,6 +18,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Cache scrape timestamp
+        uses: actions/cache@v3
+        with:
+          path: .last_scrape
+          key: scrape-cache-${{ github.run_id }}
+          restore-keys: |
+            scrape-cache-
+
       - name: Install uv (Fast Package Manager)
         uses: astral-sh/setup-uv@v1
 
