@@ -1,16 +1,17 @@
 services:
-  - type: cron
+  - type: web
     name: daily-ai-digest
     env: python
-    schedule: "0 15 * * *" # Runs at 15:00 UTC (8:30 PM IST)
     buildCommand: "uv pip install -r requirements.txt --system"
-    startCommand: "python -m app.daily_runner"
-    plan: starter # ~$1/month implied cost for cron
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    plan: free # Completely free tier
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+      - key: CRON_SECRET
+        sync: false # Set a password here!
       - key: DATABASE_URL
-        sync: false # User must provide this in dashboard
+        sync: false
       - key: GROQ_API_KEY
         sync: false
       - key: MY_EMAIL

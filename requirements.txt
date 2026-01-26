@@ -17,3 +17,5 @@ tenacity
 markdown
 html-to-markdown
 youtube-transcript-api
+fastapi
+uvicorn
