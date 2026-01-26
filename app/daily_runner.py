@@ -139,6 +139,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 user_count += 1
                 logger.info(f"--- Processing for user: {user.name} ({user.email}) ---")
 
+                # Refresh user from DB to get latest flags (prevents stale data)
+                repo.session.refresh(user)
+
                 # 0. Check for New Admin Promotion
                 if user.role == "admin" and user.admin_welcome_sent != "true":
                     from app.services.process_email import send_admin_welcome_email
