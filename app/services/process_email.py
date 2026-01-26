@@ -202,34 +202,41 @@ def send_admin_welcome_email(user) -> bool:
         
         subject = "Welcome to Helix Admin Access 🚀"
         
-        body_html = f"""
-        <h1>Welcome to Helix Admin, {user.name}!</h1>
-        <p>You have been upgraded to <strong>Administrator</strong> status.</p>
-        <p><strong>Your Privileges:</strong></p>
-        <ul>
+        body_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome to Helix Admin</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h1 style="color: #4F46E5;">Welcome to Helix Admin, {user.name}!</h1>
+    <p>You have been upgraded to <strong>Administrator</strong> status.</p>
+    <div style="background-color: #F3F4F6; padding: 15px; border-radius: 5px; margin: 20px 0;">
+        <p style="margin-top: 0;"><strong>Your Privileges:</strong></p>
+        <ul style="margin-bottom: 0;">
             <li>Unlimited Access (No 30-day trial expiry)</li>
             <li>Priority Delivery</li>
             <li>Access to all experimental features</li>
         </ul>
-        <p>Thank you for leading the way.</p>
-        <p>Best,<br>The Helix Team</p>
-        """
+    </div>
+    <p>Thank you for leading the way.</p>
+    <p>Best,<br>The Helix Team</p>
+</body>
+</html>"""
         
-        body_text = f"""
-        Welcome to Helix Admin, {user.name}!
-        
-        You have been upgraded to Administrator status.
-        
-        Your Privileges:
-        - Unlimited Access (No 30-day trial expiry)
-        - Priority Delivery
-        - Access to all experimental features
-        
-        Thank you for leading the way.
-        
-        Best,
-        The Helix Team
-        """
+        body_text = f"""Welcome to Helix Admin, {user.name}!
+
+You have been upgraded to Administrator status.
+
+Your Privileges:
+- Unlimited Access (No 30-day trial expiry)
+- Priority Delivery
+- Access to all experimental features
+
+Thank you for leading the way.
+
+Best,
+The Helix Team"""
         
         send_email_to_recipient(
             to_email=user.email,
