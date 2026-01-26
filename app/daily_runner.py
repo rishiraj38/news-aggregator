@@ -145,20 +145,24 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     logger.info(f"User {user.email} is a new admin. Sending welcome email...")
                     if send_admin_welcome_email(user):
                         repo.update_user_admin_welcome(user.id)
-                        logger.info("✓ Admin welcome email sent and flagged.")
+                        repo.session.refresh(user)  # Refresh to get updated flag
+                        logger.info(f"✓ Admin welcome email sent and flagged (flag now: {user.admin_welcome_sent}).")
                     else:
                         logger.error("✗ Failed to send admin welcome email.")
                 user_profile = user_service.get_user_profile(user)
                 
                 # 1.5 Filter out already seen digests
                 seen_digest_ids = set(repo.get_user_recommended_digest_ids(user.id))
+                logger.info(f"User {user.name} has {len(seen_digest_ids)} previously recommended digests")
+                logger.debug(f"Seen IDs sample: {list(seen_digest_ids)[:5] if seen_digest_ids else []}")
+                
                 unseen_digests = [d for d in recent_digests if d['id'] not in seen_digest_ids]
                 
                 if not unseen_digests:
                     logger.info(f"No new digests for {user.name} (All {len(recent_digests)} recent items already recommended). Skipping.")
                     continue
                 
-                logger.info(f"Ranking {len(unseen_digests)} new digests for {user.name}...")
+                logger.info(f"Ranking {len(unseen_digests)} new digests for {user.name} (out of {len(recent_digests)} total recent)...")
 
                 # 2. Rank Content
                 curator = CuratorAgent(user_profile)
