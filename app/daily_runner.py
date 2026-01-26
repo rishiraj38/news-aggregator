@@ -22,7 +22,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
+def _is_scrape_recent():
+    try:
+        with open(".last_scrape", "r") as f:
+            last_scrape_ts = float(f.read().strip())
+        last_scrape = datetime.fromtimestamp(last_scrape_ts)
+        # 60 minutes cooldown
+        return (datetime.now() - last_scrape).total_seconds() < 3600
+    except Exception:
+        return False
+
+def _update_last_scrape():
+    try:
+        with open(".last_scrape", "w") as f:
+            f.write(str(datetime.now().timestamp()))
+    except Exception as e:
+        logger.warning(f"Failed to update scrape cache timestamp: {e}")
+
+
+def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = False) -> dict:
     from datetime import timezone
     start_time = datetime.now(timezone.utc)
     logger.info("=" * 60)
@@ -48,18 +66,24 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10) -> dict:
             logger.error(f"Failed to create database tables: {e}")
             raise
 
-        logger.info("\n[1/5] Scraping articles from sources...")
-        scraping_results = run_scrapers(hours=hours)
-        results["scraping"] = {
-            "youtube": len(scraping_results.get("youtube", [])),
-            "openai": len(scraping_results.get("openai", [])),
-            "anthropic": len(scraping_results.get("anthropic", [])),
-        }
-        logger.info(
-            f"✓ Scraped {results['scraping']['youtube']} YouTube videos, "
-            f"{results['scraping']['openai']} OpenAI articles, "
-            f"{results['scraping']['anthropic']} Anthropic articles"
-        )
+        if not force_scrape and _is_scrape_recent():
+            logger.info("\n[1/5] Using cached scrape data (Last scrape < 60 mins ago). Skipping new checks.")
+            results["scraping"] = {"status": "cached"}
+        else:
+            logger.info("\n[1/5] Scraping articles from sources...")
+            scraping_results = run_scrapers(hours=hours)
+            results["scraping"] = {
+                "youtube": len(scraping_results.get("youtube", [])),
+                "openai": len(scraping_results.get("openai", [])),
+                "anthropic": len(scraping_results.get("anthropic", [])),
+            }
+            logger.info(
+                f"✓ Scraped {results['scraping']['youtube']} YouTube videos, "
+                f"{results['scraping']['openai']} OpenAI articles, "
+                f"{results['scraping']['anthropic']} Anthropic articles"
+            )
+            _update_last_scrape()
+
 
         logger.info("\n[2/5] Processing Anthropic markdown...")
         anthropic_result = process_anthropic_markdown()
