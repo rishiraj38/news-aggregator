@@ -260,8 +260,10 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 logger.error(f"Error processing for user {user.email}: {e}")
             
             # Rate Limit Protection (Groq has RPM limits)
+            # Increased to 10s to stay safely below 30 RPM (approx 6 RPM)
             import time
-            time.sleep(2)
+            logger.info("Sleeping 10s to respect Groq Rate Limits...")
+            time.sleep(10)
         
         results["user_digests"] = user_count
         results["emails_sent"] = email_count
