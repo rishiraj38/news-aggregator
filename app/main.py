@@ -58,11 +58,21 @@ def get_pipeline_status():
         if not run:
             return {"status": "IDLE", "message": "No runs recorded yet."}
         
+        from datetime import timezone
+        
+        start_time = run.start_time
+        if start_time and start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+            
+        end_time = run.end_time
+        if end_time and end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=timezone.utc)
+        
         return {
             "id": run.id,
             "status": run.status,
-            "start_time": run.start_time,
-            "end_time": run.end_time,
+            "start_time": start_time,
+            "end_time": end_time,
             "log_summary": run.log_summary,
             "users_processed": run.users_processed
         }
