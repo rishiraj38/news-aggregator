@@ -3,7 +3,7 @@ services:
     name: daily-ai-digest
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     plan: free # Completely free tier
     envVars:
       - key: PYTHON_VERSION
