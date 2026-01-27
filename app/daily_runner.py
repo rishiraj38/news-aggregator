@@ -160,10 +160,14 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 if user.role != "admin": # Admins are immune
                     # Ensure timezone awareness compatibility
                     created_at = user.created_at
-                    if created_at.tzinfo is None:
-                        created_at = created_at.replace(tzinfo=timezone.utc)
                     
-                    days_active = (start_time - created_at).days
+                    if created_at is None:
+                        logger.warning(f"User {user.email} has NULL created_at. defaulting to 0 days active.")
+                        days_active = 0
+                    else:
+                        if created_at.tzinfo is None:
+                            created_at = created_at.replace(tzinfo=timezone.utc)
+                        days_active = (start_time - created_at).days
                     
                     # STRICT 27-day limit
                     if days_active > 27:
