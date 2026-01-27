@@ -156,6 +156,26 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         
         for user in active_users:
             try:
+                # --- Trial Expiration Check (27 Days) ---
+                if user.role != "admin": # Admins are immune
+                    # Ensure timezone awareness compatibility
+                    created_at = user.created_at
+                    if created_at.tzinfo is None:
+                        created_at = created_at.replace(tzinfo=timezone.utc)
+                    
+                    days_active = (start_time - created_at).days
+                    
+                    # STRICT 27-day limit
+                    if days_active > 27:
+                         msg = f"User {user.email} trial expired ({days_active} days > 27). Marking expired & skipping."
+                         logger.info(msg)
+                         log_progress(msg)
+                         
+                         # Update DB status
+                         repo.update_user_status(user.id, "expired")
+                         continue
+                # ----------------------------------------
+
                 user_count += 1
                 if run_id:
                      repo.update_pipeline_run(run_id, users_processed=user_count)
