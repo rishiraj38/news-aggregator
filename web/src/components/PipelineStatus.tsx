@@ -17,9 +17,7 @@ export function PipelineStatus() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_URL =
-    process.env.NEXT_PUBLIC_API_URL ||
-    "https://daily-ai-digest-8nrz.onrender.com";
+  const API_URL = ""; // Use local Next.js API route
 
   const fetchStatus = async () => {
     try {
@@ -47,7 +45,9 @@ export function PipelineStatus() {
 
   if (loading && !status)
     return (
-      <div className="p-4 rounded-xl border bg-card text-card-foreground shadow-sm animate-pulse h-32"></div>
+      <div className="p-4 rounded-xl border bg-card text-card-foreground shadow-sm animate-pulse h-32">
+        <Loader2 />
+      </div>
     );
 
   if (error)
