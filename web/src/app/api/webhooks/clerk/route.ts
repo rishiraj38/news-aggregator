@@ -56,7 +56,6 @@ export async function POST(req: Request) {
 
     try {
       // Create user in database
-      // Create user in database
       const preferences = JSON.stringify({
         keywords: ["LLMs", "Agents", "Embeddings", "Fine-tuning", "RAG"],
         negative_prompts: [],
