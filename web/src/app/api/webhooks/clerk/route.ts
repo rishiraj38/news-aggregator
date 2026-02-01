@@ -41,7 +41,6 @@ export async function POST(req: Request) {
       status: 400,
     });
   }
-
   // Handle the webhook
   const eventType = evt.type;
 
