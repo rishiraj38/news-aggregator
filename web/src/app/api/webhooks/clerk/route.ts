@@ -73,7 +73,6 @@ export async function POST(req: Request) {
           role: "user",
         },
       });
-
       // Get recent digests for welcome email
       const digests = await getRecentDigests();
 
