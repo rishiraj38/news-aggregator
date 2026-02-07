@@ -89,7 +89,6 @@ export async function POST(req: Request) {
     } catch (error) {
       console.error("Error creating user or sending email:", error);
       // Don't fail the webhook - Clerk needs 200 OK
-      // But log the error for debugging
     }
   }
 
