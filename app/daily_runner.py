@@ -169,9 +169,33 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                             created_at = created_at.replace(tzinfo=timezone.utc)
                         days_active = (start_time - created_at).days
                     
+                    trial_limit = 27
+                    days_left = trial_limit - days_active
+                    
+                    if days_left == 2 and str(user.trial_warning_2_sent).lower() != "true":
+                        from app.services.process_email import send_trial_warning_email
+                        logger.info(f"User {user.email} has 2 days left on trial. Sending warning email.")
+                        if send_trial_warning_email(user, days_left):
+                            user.trial_warning_2_sent = "true"
+                            repo.session.commit()
+                    
+                    elif days_left == 1 and str(user.trial_warning_1_sent).lower() != "true":
+                        from app.services.process_email import send_trial_warning_email
+                        logger.info(f"User {user.email} has 1 day left on trial. Sending warning email.")
+                        if send_trial_warning_email(user, days_left):
+                            user.trial_warning_1_sent = "true"
+                            repo.session.commit()
+                    
                     # STRICT 27-day limit
-                    if days_active > 27:
-                         msg = f"User {user.email} trial expired ({days_active} days > 27). Marking expired & skipping."
+                    if days_active >= trial_limit:
+                         if str(user.trial_expired_sent).lower() != "true":
+                             from app.services.process_email import send_trial_expired_email
+                             logger.info(f"User {user.email} trial expired. Sending expiration email.")
+                             if send_trial_expired_email(user):
+                                 user.trial_expired_sent = "true"
+                                 repo.session.commit()
+
+                         msg = f"User {user.email} trial expired ({days_active} days >= {trial_limit}). Marking expired & skipping."
                          logger.info(msg)
                          log_progress(msg)
                          

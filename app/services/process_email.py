@@ -248,3 +248,99 @@ The Helix Team"""
     except Exception as e:
         logger.error(f"Failed to send admin welcome email to {user.email}: {e}")
         return False
+
+def send_trial_warning_email(user, days_left: int) -> bool:
+    """
+    Sends a warning email to a user when their trial is about to expire.
+    """
+    try:
+        from app.services.email_sender import send_email_to_recipient
+        
+        subject = f"Action Required: {days_left} Day{'s' if days_left > 1 else ''} Left in Your Helix Trial ⏳"
+        
+        body_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Trial Expiring Soon</title>
+</head>
+<body style="font-family: 'Inter', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+    <div style="text-align: center; padding-bottom: 20px;">
+        <h2 style="color: #4F46E5; margin-bottom: 5px; font-size: 28px;">Helix AI News</h2>
+    </div>
+    <div style="background-color: #ffffff; padding: 40px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+        <h1 style="color: #111827; font-size: 24px; margin-top: 0; font-weight: 700;">Hi {user.name},</h1>
+        <p style="color: #4b5563; font-size: 16px; line-height: 1.8;">We hope you're enjoying your curated tech insights. This is a quick reminder that your free trial will expire in <strong style="color: #dc2626; font-size: 18px;">{days_left} day{'s' if days_left > 1 else ''}</strong>.</p>
+        
+        <div style="background-color: #FEF3C7; color: #92400E; padding: 20px; border-radius: 8px; margin: 30px 0; border-left: 4px solid #F59E0B;">
+            <strong style="display: block; font-size: 18px; margin-bottom: 5px;">Don't lose access!</strong> You'll miss out on personalized AI news and curated insights. Upgrade now to keep your edge in tech.
+        </div>
+        
+        <div style="text-align: center; margin: 35px 0;">
+            <a href="https://helix.news/pricing" style="background-color: #4F46E5; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; transition: all 0.2s;">Upgrade My Subscription</a>
+        </div>
+        
+        <p style="color: #4b5563; font-size: 15px; margin-bottom: 0;">If you have any questions or need help, just reply to this email.</p>
+        <p style="color: #4b5563; font-size: 15px; margin-top: 10px;">Best,<br><strong>The Helix Team</strong></p>
+    </div>
+    <div style="text-align: center; margin-top: 25px; color: #9ca3af; font-size: 13px;">
+        <p>&copy; 2024 Helix AI. All rights reserved.</p>
+    </div>
+</body>
+</html>"""
+        
+        body_text = f"Hi {user.name},\n\nYour Helix trial expires in {days_left} day{'s' if days_left > 1 else ''}. Upgrade your subscription to keep receiving your daily personalized AI digests.\n\nUpgrade here: https://helix.news/pricing\n\nBest,\nThe Helix Team"
+        
+        send_email_to_recipient(user.email, subject, body_text, body_html)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send trial warning email to {user.email}: {e}")
+        return False
+
+def send_trial_expired_email(user) -> bool:
+    """
+    Sends an email to a user when their trial has expired.
+    """
+    try:
+        from app.services.email_sender import send_email_to_recipient
+        
+        subject = "Your Helix Trial Has Expired 🛑"
+        
+        body_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Trial Expired</title>
+</head>
+<body style="font-family: 'Inter', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+    <div style="text-align: center; padding-bottom: 20px;">
+        <h2 style="color: #4F46E5; margin-bottom: 5px; font-size: 28px;">Helix AI News</h2>
+    </div>
+    <div style="background-color: #ffffff; padding: 40px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+        <h1 style="color: #111827; font-size: 24px; margin-top: 0; font-weight: 700;">Hi {user.name},</h1>
+        <p style="color: #4b5563; font-size: 16px; line-height: 1.8;">Your free trial of Helix AI News has officially expired. We hope you discovered some incredible insights and enjoyed having a personal AI curator!</p>
+        
+        <p style="color: #4b5563; font-size: 16px; line-height: 1.8;">To reactivate your personalized daily digests and continue staying ahead of the tech curve without the noise, please subscribe to one of our premium plans.</p>
+        
+        <div style="text-align: center; margin: 35px 0;">
+            <a href="https://helix.news/pricing" style="background-color: #4F46E5; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; transition: all 0.2s;">Reactivate My Account</a>
+        </div>
+        
+        <div style="background-color: #F3F4F6; padding: 15px; border-radius: 8px; text-align: center;">
+            <p style="color: #4b5563; font-size: 14px; margin: 0;">We have securely saved your custom curator profile, so you can pick up right where you left off!</p>
+        </div>
+        <p style="color: #4b5563; font-size: 15px; margin-top: 20px;">Best,<br><strong>The Helix Team</strong></p>
+    </div>
+    <div style="text-align: center; margin-top: 25px; color: #9ca3af; font-size: 13px;">
+        <p>&copy; 2024 Helix AI. All rights reserved.</p>
+    </div>
+</body>
+</html>"""
+        
+        body_text = f"Hi {user.name},\n\nYour free trial of Helix has expired. To reactivate your daily digests, please subscribe to one of our premium plans.\n\nSubscribe here: https://helix.news/pricing\n\nBest,\nThe Helix Team"
+        
+        send_email_to_recipient(user.email, subject, body_text, body_html)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send trial expired email to {user.email}: {e}")
+        return False

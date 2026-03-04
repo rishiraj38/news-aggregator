@@ -82,6 +82,9 @@ class User(Base):
     subscription_status = Column(String, default="trial")
     role = Column(String, default="user")
     admin_welcome_sent = Column(String, default="false") # Boolean stored as string in this repo's pattern?
+    trial_warning_2_sent = Column(String, default="false")
+    trial_warning_1_sent = Column(String, default="false")
+    trial_expired_sent = Column(String, default="false")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
