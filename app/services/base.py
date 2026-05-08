@@ -51,6 +51,11 @@ class BaseProcessService(ABC):
             except Exception as e:
                 failed += 1
                 self.logger.error(f"✗ Error processing {item_id}: {e}")
+                if hasattr(self, "repo") and hasattr(self.repo, "session"):
+                    try:
+                        self.repo.session.rollback()
+                    except Exception as rollback_err:
+                        self.logger.error(f"✗ Failed to rollback session: {rollback_err}")
 
         self.logger.info(f"Processing complete: {processed} processed, {failed} failed out of {total} total")
 

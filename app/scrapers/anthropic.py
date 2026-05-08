@@ -31,7 +31,7 @@ class AnthropicScraper(BaseScraper):
             response.raise_for_status()
             html = response.text
             markdown = convert(html)
-            return markdown
+            return str(markdown) if markdown is not None else None
         except Exception:
             return None
 
