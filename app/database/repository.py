@@ -43,6 +43,7 @@ class Repository:
         existing = self.session.query(YouTubeVideo).filter_by(video_id=video_id).first()
         if existing:
             return None
+        thumb = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
         video = YouTubeVideo(
             video_id=video_id,
             title=title,
@@ -51,6 +52,7 @@ class Repository:
             published_at=published_at,
             description=description,
             transcript=transcript,
+            image_url=thumb,
         )
         self.session.add(video)
         self.session.commit()
@@ -105,18 +107,22 @@ class Repository:
         return article
 
     def bulk_create_youtube_videos(self, videos: List[dict]) -> int:
-        formatted_videos = [
-            {
-                "video_id": v["video_id"],
-                "title": v["title"],
-                "url": v["url"],
-                "channel_id": v.get("channel_id", ""),
-                "published_at": v["published_at"],
-                "description": v.get("description", ""),
-                "transcript": v.get("transcript"),
-            }
-            for v in videos
-        ]
+        formatted_videos = []
+        for v in videos:
+            vid = v["video_id"]
+            formatted_videos.append(
+                {
+                    "video_id": vid,
+                    "title": v["title"],
+                    "url": v["url"],
+                    "channel_id": v.get("channel_id", ""),
+                    "published_at": v["published_at"],
+                    "description": v.get("description", ""),
+                    "transcript": v.get("transcript"),
+                    "image_url": v.get("image_url")
+                    or f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                }
+            )
         return self._bulk_create_items(
             formatted_videos, YouTubeVideo, "video_id", "video_id"
         )
@@ -130,6 +136,7 @@ class Repository:
                 "published_at": a["published_at"],
                 "description": a.get("description", ""),
                 "category": a.get("category"),
+                "image_url": a.get("image_url"),
             }
             for a in articles
         ]
@@ -146,6 +153,7 @@ class Repository:
                 "published_at": a["published_at"],
                 "description": a.get("description", ""),
                 "category": a.get("category"),
+                "image_url": a.get("image_url"),
             }
             for a in articles
         ]
@@ -163,6 +171,7 @@ class Repository:
                 "published_at": a["published_at"],
                 "description": a.get("description", ""),
                 "category": a.get("category"),
+                "image_url": a.get("image_url"),
             }
             for a in articles
         ]
@@ -227,6 +236,9 @@ class Repository:
         for video in youtube_videos:
             key = f"youtube:{video.video_id}"
             if key not in seen_ids:
+                thumb = getattr(video, "image_url", None) or (
+                    f"https://i.ytimg.com/vi/{video.video_id}/hqdefault.jpg"
+                )
                 articles.append(
                     {
                         "type": "youtube",
@@ -235,6 +247,7 @@ class Repository:
                         "url": video.url,
                         "content": video.transcript or video.description or "",
                         "published_at": video.published_at,
+                        "image_url": thumb,
                     }
                 )
 
@@ -250,6 +263,7 @@ class Repository:
                         "url": article.url,
                         "content": article.description or "",
                         "published_at": article.published_at,
+                        "image_url": getattr(article, "image_url", None),
                     }
                 )
 
@@ -269,6 +283,7 @@ class Repository:
                         "url": article.url,
                         "content": article.markdown or article.description or "",
                         "published_at": article.published_at,
+                        "image_url": getattr(article, "image_url", None),
                     }
                 )
 
@@ -285,6 +300,7 @@ class Repository:
                         "url": article.url,
                         "content": article.description or "",
                         "published_at": article.published_at,
+                        "image_url": getattr(article, "image_url", None),
                     }
                 )
 
@@ -301,6 +317,7 @@ class Repository:
         title: str,
         summary: str,
         published_at: Optional[datetime] = None,
+        image_url: Optional[str] = None,
     ) -> Optional[Digest]:
         digest_id = f"{article_type}:{article_id}"
         existing = self.session.query(Digest).filter_by(id=digest_id).first()
@@ -322,6 +339,7 @@ class Repository:
             title=title,
             summary=summary,
             created_at=created_at,
+            image_url=image_url,
         )
         self.session.add(digest)
         self.session.commit()
@@ -346,6 +364,7 @@ class Repository:
                 "url": d.url,
                 "title": d.title,
                 "summary": d.summary,
+                "image_url": getattr(d, "image_url", None),
                 "created_at": d.created_at,
                 "sent_at": d.sent_at,
             }
@@ -366,6 +385,7 @@ class Repository:
                 "url": d.url,
                 "title": d.title,
                 "summary": d.summary,
+                "image_url": getattr(d, "image_url", None),
                 "created_at": d.created_at,
                 "sent_at": d.sent_at,
             }

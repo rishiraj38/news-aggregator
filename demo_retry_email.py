@@ -69,23 +69,8 @@ def retry_email_only(email: str):
     # 5. Send Email
     print(f"   📧 Sending email with {len(final_articles_to_send)} articles...")
     try:
-        # We need to construct a user profile dict for the email agent
-        # user.preferences is a JSON string, need to parse if needed, 
-        # but process_email might handle it or just use generic profile.
-        # Let's use the standard flow.
-        
-        import json
-        try:
-            prefs = json.loads(user.preferences)
-        except:
-            prefs = {}
-            
-        profile_dict = {
-            "name": user.name,
-            "interests": prefs.get("interests", []),
-            "technical_level": user.expertise_level
-        }
-        
+        profile_dict = user_service.get_user_profile(user)
+
         result = send_personalized_email(user, profile_dict, final_articles_to_send)
         
         if result["success"]:

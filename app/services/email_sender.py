@@ -44,6 +44,20 @@ def send_email(subject: str, body_text: str, body_html: str = None, recipients: 
         smtp.sendmail(MY_EMAIL, recipients, msg.as_string())
 
 
+def resolve_article_thumbnail_url(article) -> str | None:
+    """Best URL for `<img>`: stored image, or YouTube default thumb by digest id."""
+    url = getattr(article, "image_url", None)
+    if url:
+        return url
+    atype = getattr(article, "article_type", None) or ""
+    did = getattr(article, "digest_id", "") or ""
+    if atype == "youtube" and did:
+        _, _, vid = did.partition(":")
+        if vid:
+            return f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+    return None
+
+
 def markdown_to_html(markdown_text: str) -> str:
     html = markdown.markdown(markdown_text, extensions=['extra', 'nl2br'])
     return f"""<!DOCTYPE html>
@@ -118,6 +132,13 @@ def markdown_to_html(markdown_text: str) -> str:
             color: #0066cc;
             font-size: 14px;
         }}
+        .article-thumb {{
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin: 8px 0 12px;
+            display: block;
+        }}
     </style>
 </head>
 <body>
@@ -140,6 +161,19 @@ def digest_to_html(digest_response) -> str:
     html_parts.append('<hr>')
     
     for article in digest_response.articles:
+        thumb = resolve_article_thumbnail_url(article)
+        if thumb:
+            safe_src = html.escape(thumb, quote=True)
+            safe_title = html.escape(article.title[:200])
+            safe_url = html.escape(article.url, quote=True)
+            html_parts.append(
+                f'<a href="{safe_url}" style="text-decoration:none;display:block">'
+                f'<img src="{safe_src}" alt="{safe_title}" width="560" border="0" '
+                'class="article-thumb" '
+                'style="display:block;max-width:560px;width:100%;height:auto;'
+                'border:0;line-height:100%;outline:none;text-decoration:none;border-radius:8px" />'
+                f"</a>"
+            )
         html_parts.append(f'<h3>{html.escape(article.title)}</h3>')
         summary_html = markdown.markdown(article.summary, extensions=['extra', 'nl2br'])
         html_parts.append(f'<div>{summary_html}</div>')
@@ -211,6 +245,13 @@ def digest_to_html(digest_response) -> str:
             margin-top: 8px;
             color: #0066cc;
             font-size: 14px;
+        }}
+        .article-thumb {{
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin: 8px 0 12px;
+            display: block;
         }}
         .greeting p {{
             margin: 0;

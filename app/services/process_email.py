@@ -9,6 +9,8 @@ from app.agent.curator_agent import CuratorAgent
 from app.profiles.user_profile import USER_PROFILE
 from app.database.repository import Repository
 from app.services.email_sender import send_email, digest_to_html
+from app.services.thumbnail_resolve import fetch_og_or_twitter_image
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,6 +18,29 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
+
+
+def _resolve_thumbnail_for_digest(d: dict, og_cache: dict) -> str | None:
+    """Stored thumb, YouTube default, then one-page OG/Twitter image fetch per article URL."""
+    img = d.get("image_url")
+    if img:
+        return img
+    if d.get("article_type") == "youtube" and d.get("article_id"):
+        return f"https://i.ytimg.com/vi/{d['article_id']}/hqdefault.jpg"
+    url = (d.get("url") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return None
+    if url not in og_cache:
+        og_cache[url] = fetch_og_or_twitter_image(url)
+        got = og_cache[url]
+        if got:
+            logger.info(
+                "Resolved thumbnail via OG for %s",
+                url[:120] + ("…" if len(url) > 120 else ""),
+            )
+        else:
+            logger.debug("No OG thumbnail for digest %s", d.get("id"))
+    return og_cache[url]
 
 
 def generate_email_digest(hours: int = 24, top_n: int = 10) -> EmailDigestResponse:
@@ -38,6 +63,7 @@ def generate_email_digest(hours: int = 24, top_n: int = 10) -> EmailDigestRespon
 
     logger.info(f"Generating email digest with top {top_n} articles")
 
+    og_cache: dict = {}
     article_details = [
         RankedArticleDetail(
             digest_id=a.digest_id,
@@ -49,6 +75,10 @@ def generate_email_digest(hours: int = 24, top_n: int = 10) -> EmailDigestRespon
             url=next((d["url"] for d in digests if d["id"] == a.digest_id), ""),
             article_type=next(
                 (d["article_type"] for d in digests if d["id"] == a.digest_id), ""
+            ),
+            image_url=_resolve_thumbnail_for_digest(
+                next((d for d in digests if d["id"] == a.digest_id), {}),
+                og_cache,
             ),
         )
         for a in ranked_articles
@@ -111,35 +141,12 @@ def send_personalized_email(user, user_profile: dict, top_articles: list) -> dic
     repo = Repository()
     
     try:
-        # Convert RankedArticle objects to RankedArticleDetail objects expected by EmailAgent
-        article_details = [
-            RankedArticleDetail(
-                digest_id=a.digest_id,
-                rank=a.rank,
-                relevance_score=a.relevance_score,
-                reasoning=a.reasoning,
-                title=getattr(a, 'title', "Unknown"), # Curator might return objects with title
-                summary=getattr(a, 'summary', "No summary"),
-                url=getattr(a, 'url', "#"),
-                article_type=getattr(a, 'article_type', "article"),
-            )
-            for a in top_articles
-        ]
-        
-        # Hydrate missing details if needed (in case Curator returned minimal objects)
-        # Note: In the current flow, Curator returns fully hydrated objects, 
-        # but if we needed to fetch from DB, we would do it here using digest_id.
-        # For this implementation, we assume top_articles has what we need 
-        # (which is true if CuratorAgent.rank_digests returns rich objects).
-        
-        # Actually, CuratorAgent returns RankedArticle which only has ID/Score/Reasoning.
-        # We need to fetch the actual Digest details!
-        
-        # Let's fix the hydration:
+        # Curator returns RankedArticle (ids + scores); hydrate titles/summaries from Digest rows.
         digest_ids = [a.digest_id for a in top_articles]
         digests_map = {d['id']: d for d in repo.get_digests_by_ids(digest_ids)}
         
         hydrated_articles = []
+        og_cache: dict = {}
         for a in top_articles:
             if a.digest_id in digests_map:
                 d = digests_map[a.digest_id]
@@ -149,10 +156,11 @@ def send_personalized_email(user, user_profile: dict, top_articles: list) -> dic
                         rank=a.rank,
                         relevance_score=a.relevance_score,
                         reasoning=a.reasoning,
-                        title=d['title'],
-                        summary=d['summary'],
-                        url=d['url'],
-                        article_type=d['article_type']
+                        title=d["title"],
+                        summary=d["summary"],
+                        url=d["url"],
+                        article_type=d["article_type"],
+                        image_url=_resolve_thumbnail_for_digest(d, og_cache),
                     )
                 )
         

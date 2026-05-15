@@ -18,6 +18,7 @@ class RankedArticleDetail(BaseModel):
     url: str
     article_type: str
     reasoning: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class EmailDigestResponse(BaseModel):
@@ -33,6 +34,13 @@ class EmailDigestResponse(BaseModel):
         
         for article in self.articles:
             markdown += f"## {article.title}\n\n"
+            thumb = article.image_url
+            if not thumb and article.article_type == "youtube":
+                vid = article.digest_id.split(":", 1)[-1] if article.digest_id else ""
+                if vid:
+                    thumb = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+            if thumb:
+                markdown += f"![]({thumb})\n\n"
             markdown += f"{article.summary}\n\n"
             markdown += f"[Read more →]({article.url})\n\n"
             markdown += "---\n\n"

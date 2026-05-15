@@ -15,6 +15,7 @@ class YouTubeVideo(Base):
     published_at = Column(DateTime, nullable=False)
     description = Column(Text)
     transcript = Column(Text, nullable=True)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -27,6 +28,7 @@ class OpenAIArticle(Base):
     description = Column(Text)
     published_at = Column(DateTime, nullable=False)
     category = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -40,6 +42,7 @@ class AnthropicArticle(Base):
     published_at = Column(DateTime, nullable=False)
     category = Column(String, nullable=True)
     markdown = Column(Text, nullable=True)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -53,6 +56,7 @@ class GeneralRSSArticle(Base):
     description = Column(Text)
     published_at = Column(DateTime, nullable=False)
     category = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -65,6 +69,7 @@ class Digest(Base):
     url = Column(String, nullable=False)
     title = Column(String, nullable=False)
     summary = Column(Text, nullable=False)
+    image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     sent_at = Column(DateTime, nullable=True)
 

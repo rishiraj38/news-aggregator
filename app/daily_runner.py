@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -53,7 +54,6 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         "processing": {},
         "digests": {},
         "email": {},
-        "email": {},
         "success": False,
     }
 
@@ -81,6 +81,10 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             with engine.connect() as conn:
                 Base.metadata.create_all(engine)
                 log_progress("✓ Database tables verified/created")
+            from app.database.schema_migrations import ensure_image_url_columns
+
+            ensure_image_url_columns()
+            log_progress("✓ Schema migrations applied (image_url columns)")
         except Exception as e:
             logger.error(f"Failed to create database tables: {e}")
             raise
@@ -153,9 +157,14 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
 
         user_count = 0
         email_count = 0
-        
+        digest_email_test_only = os.getenv("DIGEST_EMAIL_TEST_ONLY", "").strip().lower()
+        if digest_email_test_only:
+            log_progress(f"⚠ DIGEST_EMAIL_TEST_ONLY set — personalization runs only for {digest_email_test_only}")
+
         for user in active_users:
             try:
+                if digest_email_test_only and user.email.strip().lower() != digest_email_test_only:
+                    continue
                 # --- Trial Expiration Check (27 Days) ---
                 if user.role != "admin": # Admins are immune
                     # Ensure timezone awareness compatibility
@@ -307,8 +316,6 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 
                 if email_result["success"]:
                     email_count += 1
-                if email_result["success"]:
-                    email_count += 1
                     log_progress(f"✓ Email sent to {user.email}")
                 else:
                     logger.error(f"✗ Failed to send email to {user.email}: {email_result.get('error')}")
@@ -358,7 +365,10 @@ if __name__ == "__main__":
     # Ensure tables exists
     from app.database.models import Base
     from app.database.connection import engine
+    from app.database.schema_migrations import ensure_image_url_columns
+
     Base.metadata.create_all(engine)
-    
-    result = run_daily_pipeline(hours=72, top_n=10) # 72 hours for demo
+    ensure_image_url_columns()
+
+    result = run_daily_pipeline(hours=72, top_n=10)  # 72 hours for demo
     exit(0 if result.get("success", True) else 1)

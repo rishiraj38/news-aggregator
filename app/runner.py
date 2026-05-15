@@ -56,6 +56,7 @@ def _save_youtube_videos(
                     "published_at": v.published_at,
                     "description": v.description,
                     "transcript": v.transcript,
+                    "image_url": f"https://i.ytimg.com/vi/{v.video_id}/hqdefault.jpg",
                 }
             )
             
@@ -77,6 +78,7 @@ def _save_rss_articles(
                 "published_at": a.published_at,
                 "description": a.description,
                 "category": a.category,
+                "image_url": a.image_url,
             }
             for a in articles
         ]

@@ -35,7 +35,8 @@ class DigestProcessor(BaseProcessService):
                 url=item["url"],
                 title=result.title,
                 summary=result.summary,
-                published_at=item.get("published_at")
+                published_at=item.get("published_at"),
+                image_url=item.get("image_url"),
             )
             return True
         except Exception:
