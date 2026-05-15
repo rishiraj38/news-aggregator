@@ -93,6 +93,9 @@ target/
 app/alembic/versions/*
 !app/alembic/versions/.gitkeep
 
+# Generated social graphics
+outputs/instagram/
+
 # Launchpad playground
 playground/*.png
 

@@ -23,6 +23,48 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _maybe_run_instagram_autopost(log_progress) -> None:
+    """
+    If ENABLE_INSTAGRAM_AUTOPOST=true and Meta/Imgur env is set, post today's card after the pipeline.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    flag = os.getenv("ENABLE_INSTAGRAM_AUTOPOST", "").strip().lower()
+    if flag not in ("1", "true", "yes"):
+        return
+    root = Path(__file__).resolve().parents[1]
+    script = root / "publish_instagram_card.py"
+    if not script.is_file():
+        logger.warning("publish_instagram_card.py missing; skipping Instagram autopost")
+        return
+    msg = "Instagram autopost: publishing digest card…"
+    logger.info(msg)
+    log_progress(msg)
+    try:
+        r = subprocess.run(
+            [sys.executable, str(script), "--publish"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=360,
+        )
+        if r.returncode != 0:
+            tail = (r.stderr or r.stdout or "")[-2500:]
+            logger.error("Instagram autopost failed (exit %s): %s", r.returncode, tail)
+            log_progress("Instagram autopost failed — see logs")
+        else:
+            logger.info("Instagram autopost finished OK")
+            log_progress("Instagram post published")
+    except subprocess.TimeoutExpired:
+        logger.error("Instagram autopost timed out")
+        log_progress("Instagram autopost timed out")
+    except Exception as e:
+        logger.error("Instagram autopost error: %s", e)
+        log_progress(f"Instagram autopost error: {e}")
+
+
 def _is_scrape_recent():
     try:
         with open(".last_scrape", "r") as f:
@@ -332,7 +374,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         results["user_digests"] = user_count
         results["emails_sent"] = email_count
         results["success"] = True
-        
+
+        _maybe_run_instagram_autopost(log_progress)
+
         if run_id:
             repo.update_pipeline_run(run_id, status="SUCCESS", log_entry="Pipeline finished successfully.")
 
