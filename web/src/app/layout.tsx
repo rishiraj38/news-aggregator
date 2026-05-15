@@ -1,16 +1,27 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { IBM_Plex_Sans, Newsreader } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
+import { Analytics } from "@vercel/analytics/react";
 
-const inter = Inter({ subsets: ["latin"] });
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  variable: "--font-newsreader",
+  display: "swap",
+});
+
+const ibmPlexSans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-ibm-plex",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "Helix | Autonomous AI News",
-  description: "Your daily curated AI news digest.",
+  title: "Helix — Curated technical intelligence",
+  description:
+    "Personalized digests from RSS and transcripts—ranked and summarized for people who build software.",
 };
-
-import { Analytics } from "@vercel/analytics/react";
 
 export default function RootLayout({
   children,
@@ -19,8 +30,10 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en">
-        <body className={inter.className}>
+      <html lang="en" className="dark">
+        <body
+          className={`${newsreader.variable} ${ibmPlexSans.variable} antialiased min-h-dvh`}
+        >
           {children}
           <Analytics />
         </body>

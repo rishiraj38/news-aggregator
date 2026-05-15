@@ -34,17 +34,16 @@ export async function getRecentDigests(): Promise<DigestArticle[]> {
     },
   });
 
-  // Filter out any articles with empty summaries
   const validDigests = digests
-    .filter((d: any) => d.summary && d.summary.length > 0)
+    .filter((d) => typeof d.summary === "string" && d.summary.length > 0)
     .slice(0, 10);
 
-  return validDigests.map((d: any) => ({
+  return validDigests.map((d) => ({
     id: d.id,
     title: d.title,
-    summary: d.summary || "",
+    summary: d.summary,
     url: d.url,
     article_type: d.article_type,
-    created_at: d.created_at,
+    created_at: d.created_at ?? new Date(0),
   }));
 }

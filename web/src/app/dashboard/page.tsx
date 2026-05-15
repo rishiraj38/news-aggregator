@@ -3,14 +3,17 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import Navbar from "@/components/Navbar";
 import {
-  Newspaper,
   Sparkles,
   Clock,
   ExternalLink,
   Lock,
   ChevronDown,
+  ArrowUpRight,
 } from "lucide-react";
 import { PipelineStatus } from "@/components/PipelineStatus";
+import type { Digest, Recommendation } from "@prisma/client";
+
+type RecWithDigest = Recommendation & { digest: Digest };
 
 export default async function Dashboard() {
   const user = await currentUser();
@@ -19,17 +22,14 @@ export default async function Dashboard() {
     redirect("/sign-in");
   }
 
-  // 1. Sync User to Postgres (Upsert logic could be better, but check-then-create is fine for mvp)
-  let dbUser: any = await db.user.findUnique({
+  let dbUser = await db.user.findUnique({
     where: { email: user.emailAddresses[0].emailAddress },
   });
 
   if (!dbUser) {
-    // New User! Create them in our DB so the Python Agent can find them.
     const email = user.emailAddresses[0].emailAddress;
     const name = `${user.firstName} ${user.lastName}`.trim() || "Anonymous";
 
-    // Default Preferences
     const defaultPrefs = JSON.stringify({
       interests: ["LLMs", "Generative AI", "Tech News"],
       config: { prefer_technical_depth: true },
@@ -38,7 +38,7 @@ export default async function Dashboard() {
     try {
       dbUser = await db.user.create({
         data: {
-          id: user.id, // Use Clerk ID as PK
+          id: user.id,
           email: email,
           name: name,
           preferences: defaultPrefs,
@@ -51,7 +51,6 @@ export default async function Dashboard() {
       });
       console.log("Created new user in Postgres:", dbUser.id);
 
-      // TRIGGER WELCOME EMAIL
       try {
         const { sendWelcomeEmail } = await import("@/lib/mailer");
         await sendWelcomeEmail(email, name);
@@ -60,88 +59,69 @@ export default async function Dashboard() {
       }
     } catch (e) {
       console.error("Error syncing user:", e);
-      // Fallback: Try to find by ID just in case email was changed or race condition
     }
   }
-
-  // 2. Fetch Feed
-  // We need to join Recommendations -> Digests
-  // Prisma relation might not be set up if foreign keys aren't perfect in DB pull.
-  // We'll try raw query or explicit relation if scheme supports it.
-  // Since we did db pull, let's assume relations exist or we manually join.
-
-  // Actually, 'recommendations' table has 'digest_id'. 'digests' table has 'id'.
-  // We can try to fetch recommendations and then fetch digests.
-
-  // Let's use the Prisma Client to get recommendations for this user.
-  // Note: dbUser.id might differ if we found an old user by email who has a UUID.
-  // Ideally we should use the dbUser.id we found.
 
   const recommendations = await db.recommendation.findMany({
     where: { user_id: dbUser?.id || user.id },
     orderBy: { created_at: "desc" },
     take: 20,
     include: {
-      digest: true, // This requires the relation to be defined in schema.prisma
+      digest: true,
     },
   });
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white selection:bg-purple-500/30">
+    <div className="relative z-10 min-h-dvh bg-surface-deep text-ink">
       <Navbar />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-12">
-        <header className="mb-8">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold mb-2">My Intelligence Feed</h1>
-              <p className="text-gray-400">
-                Welcome back,{" "}
-                <span className="text-white font-medium">{user.firstName}</span>
-                . Here is what the agent curated for you today.
-              </p>
-            </div>
-            {/* User Badge */}
-            <div
-              className={`inline-flex items-center px-3 py-1 rounded-full border text-sm font-medium ${
-                dbUser?.role === "admin"
-                  ? "bg-purple-600/20 border-purple-500/40 text-purple-200"
-                  : "bg-purple-500/10 border-purple-500/20 text-purple-300"
-              }`}
-            >
-              <Sparkles className="w-4 h-4 mr-2" />
-              {dbUser?.role === "admin" ? "Admin Plan" : "Free Plan"}
-            </div>
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-[calc(5rem+env(safe-area-inset-top))] pb-16 sm:pb-24">
+        <header className="mb-10 sm:mb-12 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 border-b border-line pb-8">
+          <div className="max-w-2xl">
+            <p className="text-[0.8125rem] uppercase tracking-[0.2em] text-ink-faint font-medium mb-3">
+              Your digest
+            </p>
+            <h1 className="font-display text-[clamp(1.85rem,4vw,2.65rem)] tracking-tight leading-tight mb-3">
+              Morning briefing
+            </h1>
+            <p className="text-ink-muted leading-relaxed">
+              <span className="text-ink font-medium">{user.firstName}</span>, here is what the curator surfaced recently—newest first within each day.
+            </p>
+          </div>
+          <div
+            className={`inline-flex items-center self-start px-4 py-2 rounded-md border text-sm font-medium ${
+              dbUser?.role === "admin"
+                ? "border-accent/40 bg-accent-soft text-ink"
+                : "border-line-strong bg-surface-raised text-ink-muted"
+            }`}
+          >
+            <Sparkles className="w-4 h-4 mr-2 text-accent shrink-0" strokeWidth={1.75} />
+            {dbUser?.role === "admin" ? "Administrator" : "Explorer plan"}
           </div>
         </header>
 
-        {/* System Status (Admin Only) */}
         {dbUser?.role === "admin" && (
-          <div className="mb-8">
+          <div className="mb-10">
             <PipelineStatus />
           </div>
         )}
 
-        {/* Locked Settings UI */}
-        <section className="mb-12 bg-[#161616] border border-white/5 rounded-xl p-6 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-linear-to-r from-purple-900/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-
-          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center">
-                Active Interest Filters{" "}
+        <section className="mb-12 rounded-lg border border-line bg-surface p-6 sm:p-8">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-ink-faint mb-4 flex flex-wrap items-center gap-2">
+                Active filters
                 {dbUser?.role === "admin" ? (
-                  <span className="ml-2 text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded border border-purple-500/30">
-                    Admin Unlocked
+                  <span className="text-[0.6875rem] font-medium normal-case px-2 py-0.5 rounded border border-accent/35 bg-accent-soft text-ink">
+                    Unlocked
                   </span>
                 ) : (
-                  <Lock className="w-3 h-3 ml-2 text-gray-600" />
+                  <Lock className="w-3.5 h-3.5 text-ink-faint" strokeWidth={2} aria-label="Locked" />
                 )}
-              </h3>
+              </h2>
               <div className="flex flex-wrap gap-2">
                 {(() => {
                   try {
-                    // Safe parse preferences
                     const prefs = dbUser?.preferences
                       ? JSON.parse(dbUser.preferences as string)
                       : {};
@@ -149,42 +129,44 @@ export default async function Dashboard() {
                     return interests.map((tag: string) => (
                       <span
                         key={tag}
-                        className="px-3 py-1 rounded-md bg-neutral-800 text-gray-300 text-sm border border-white/5"
+                        className="px-3 py-1.5 rounded-md bg-surface-raised text-sm text-ink-muted border border-line"
                       >
                         {tag}
                       </span>
                     ));
-                  } catch (e) {
+                  } catch {
                     return (
-                      <span className="text-gray-500 text-sm">
-                        Default Settings
-                      </span>
+                      <span className="text-sm text-ink-faint">Default interests</span>
                     );
                   }
                 })()}
                 <span
-                  className="px-3 py-1 rounded-md border border-dashed border-gray-700 text-gray-500 text-sm flex items-center cursor-help"
-                  title="Upgrade to add more"
+                  className="px-3 py-1.5 rounded-md border border-dashed border-line-strong text-sm text-ink-faint cursor-default"
+                  title={dbUser?.role === "admin" ? "Managed in admin tools" : "Upgrade to customize"}
                 >
-                  + Add Keyword
+                  + Keyword
                 </span>
               </div>
             </div>
-
-            <div className="md:text-right">
+            <div className="shrink-0 lg:text-right">
               {dbUser?.role === "admin" ? (
-                <button className="px-4 py-2 bg-purple-600 text-white font-semibold rounded-lg hover:bg-purple-500 transition text-sm flex items-center shadow-lg shadow-purple-900/20">
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  Manage Keywords
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 min-h-11 px-5 rounded-md bg-accent text-surface-deep text-sm font-semibold hover:brightness-110 transition-[filter]"
+                >
+                  <Sparkles className="w-4 h-4" strokeWidth={2} />
+                  Manage keywords
                 </button>
               ) : (
                 <>
-                  <button className="px-4 py-2 bg-white text-black font-semibold rounded-lg hover:bg-gray-200 transition text-sm flex items-center">
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Upgrade to Customize
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 min-h-11 px-5 rounded-md border border-line-strong bg-surface-raised text-sm font-semibold text-ink hover:border-accent/35 transition-colors"
+                  >
+                    Customize (upgrade)
                   </button>
-                  <p className="text-xs text-gray-500 mt-2">
-                    get unlimited custom keywords
+                  <p className="text-xs text-ink-faint mt-2">
+                    Unlock custom themes on Full access.
                   </p>
                 </>
               )}
@@ -193,18 +175,17 @@ export default async function Dashboard() {
         </section>
 
         {recommendations.length === 0 ? (
-          <div className="p-12 text-center border border-white/10 rounded-2xl bg-white/5 backdrop-blur-sm">
-            <Sparkles className="w-12 h-12 mx-auto mb-4 text-purple-400" />
-            <h3 className="text-xl font-semibold mb-2">
-              Agent Active & Learning
-            </h3>
-            <p className="text-gray-400 max-w-md mx-auto mb-6">
-              We have registered your profile. The automated pipeline runs daily
-              at midnight. Check back tomorrow for your first curated digest!
+          <div className="rounded-lg border border-line bg-surface px-8 py-16 text-center">
+            <Sparkles className="w-11 h-11 mx-auto mb-5 text-accent/90" strokeWidth={1.25} />
+            <h2 className="font-display text-2xl tracking-tight mb-3">
+              Pipeline registered you
+            </h2>
+            <p className="text-ink-muted max-w-md mx-auto leading-relaxed mb-8">
+              The daily job ingests sources overnight. When the first digest lands for your profile, it will show up here—no refresh tricks required.
             </p>
-            <div className="inline-flex items-center px-4 py-2 rounded-full bg-purple-500/10 text-purple-300 text-sm border border-purple-500/20">
-              <Clock className="w-4 h-4 mr-2" />
-              Next run: ~12 hours
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-line-strong bg-surface-raised text-sm text-ink-muted">
+              <Clock className="w-4 h-4 text-accent shrink-0" strokeWidth={2} />
+              Typical cadence: next scheduled run within ~24h
             </div>
           </div>
         ) : (
@@ -215,14 +196,11 @@ export default async function Dashboard() {
   );
 }
 
-// -- Components --
-
-function GroupedFeed({ recommendations }: { recommendations: any[] }) {
-  // Helper to group by date
+function GroupedFeed({ recommendations }: { recommendations: RecWithDigest[] }) {
   const groups = {
-    today: [] as any[],
-    yesterday: [] as any[],
-    earlier: [] as any[],
+    today: [] as RecWithDigest[],
+    yesterday: [] as RecWithDigest[],
+    earlier: [] as RecWithDigest[],
   };
 
   const today = new Date();
@@ -230,7 +208,8 @@ function GroupedFeed({ recommendations }: { recommendations: any[] }) {
   yesterday.setDate(yesterday.getDate() - 1);
 
   recommendations.forEach((rec) => {
-    const date = new Date(rec.digest.created_at || rec.created_at);
+    const raw = rec.digest.created_at ?? rec.created_at;
+    const date = raw ? new Date(raw) : new Date(0);
     if (date.toDateString() === today.toDateString()) {
       groups.today.push(rec);
     } else if (date.toDateString() === yesterday.toDateString()) {
@@ -241,29 +220,15 @@ function GroupedFeed({ recommendations }: { recommendations: any[] }) {
   });
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-12 sm:space-y-14">
       {groups.today.length > 0 && (
-        <FeedSection
-          title="Today's Digest"
-          items={groups.today}
-          defaultOpen={true}
-        />
+        <FeedSection title="Today" items={groups.today} defaultOpen />
       )}
-
       {groups.yesterday.length > 0 && (
-        <FeedSection
-          title="Yesterday"
-          items={groups.yesterday}
-          defaultOpen={false}
-        />
+        <FeedSection title="Yesterday" items={groups.yesterday} />
       )}
-
       {groups.earlier.length > 0 && (
-        <FeedSection
-          title="Previous Archives"
-          items={groups.earlier}
-          defaultOpen={false}
-        />
+        <FeedSection title="Archive" items={groups.earlier} />
       )}
     </div>
   );
@@ -272,72 +237,90 @@ function GroupedFeed({ recommendations }: { recommendations: any[] }) {
 function FeedSection({
   title,
   items,
-  defaultOpen,
+  defaultOpen = false,
 }: {
   title: string;
-  items: any[];
-  defaultOpen: boolean;
+  items: RecWithDigest[];
+  defaultOpen?: boolean;
 }) {
   return (
     <details className="group" open={defaultOpen}>
-      <summary className="flex items-center cursor-pointer mb-6 list-none">
-        <div className="mr-4 p-1 rounded hover:bg-white/10 transition">
-          <ChevronDown className="w-5 h-5 text-gray-400 group-open:rotate-180 transition-transform" />
-        </div>
-        <h2 className="text-xl font-bold text-gray-200">{title}</h2>
-        <div className="ml-4 h-px bg-white/10 grow" />
-        <span className="ml-4 text-sm text-gray-500">
-          {items.length} articles
+      <summary className="flex cursor-pointer items-center gap-3 mb-6 sm:mb-8 list-none [&::-webkit-details-marker]:hidden">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-line bg-surface-raised group-open:bg-accent-soft group-open:border-accent/25 transition-colors">
+          <ChevronDown
+            className="w-4 h-4 text-ink-muted group-open:rotate-180 transition-transform duration-200"
+            strokeWidth={2}
+          />
+        </span>
+        <h2 className="font-display text-xl sm:text-2xl tracking-tight">{title}</h2>
+        <span className="h-px flex-1 bg-line min-w-[2rem]" aria-hidden />
+        <span className="text-sm text-ink-faint tabular-nums shrink-0">
+          {items.length} {items.length === 1 ? "item" : "items"}
         </span>
       </summary>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 animate-in fade-in slide-in-from-top-4 duration-500">
-        {items.map((rec: any) => (
+      <div className="grid gap-5 sm:gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {items.map((rec) => {
+          const displayedAt = rec.digest.created_at ?? rec.created_at;
+          return (
           <article
             key={rec.id}
-            className="group/card relative flex flex-col justify-between p-6 bg-[#161616] border border-white/5 rounded-2xl transition hover:border-purple-500/30 hover:shadow-2xl hover:shadow-purple-900/10"
+            className="group/card relative flex flex-col rounded-lg border border-line bg-surface-raised p-5 sm:p-6 transition-[border-color,box-shadow] hover:border-line-strong hover:shadow-[0_18px_40px_-28px_rgba(0,0,0,0.75)]"
           >
-            <div>
-              <div className="flex justify-between items-start mb-4">
-                <span className="inline-flex items-center px-2 py-1 rounded bg-white/5 text-xs text-gray-400 uppercase tracking-wider font-medium">
-                  {rec.digest.article_type}
-                </span>
-                <span
-                  className={`text-sm font-mono font-bold ${Number(rec.relevance_score) >= 8 ? "text-green-400" : "text-purple-400"}`}
-                >
-                  {Number(rec.relevance_score).toFixed(1)}/10
-                </span>
-              </div>
-
-              <h3 className="text-lg font-bold mb-3 leading-snug group-hover/card:text-purple-300 transition-colors">
-                <a
-                  href={rec.digest.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="before:absolute before:inset-0"
-                >
-                  {rec.digest.title}
-                </a>
-              </h3>
-
-              <p className="text-gray-400 text-sm line-clamp-3 mb-4">
-                {rec.digest.summary}
-              </p>
-
-              <div className="bg-black/40 rounded-lg p-3 mb-4">
-                <p className="text-xs text-gray-500 italic">
-                  " {rec.reasoning} "
-                </p>
-              </div>
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <span className="inline-flex items-center px-2 py-1 rounded text-[0.6875rem] font-semibold uppercase tracking-wider bg-surface-deep border border-line text-ink-faint">
+                {rec.digest.article_type}
+              </span>
+              <span
+                className={`text-sm font-semibold tabular-nums shrink-0 ${
+                  Number(rec.relevance_score) >= 8 ? "text-emerald-400/95" : "text-accent"
+                }`}
+              >
+                {Number(rec.relevance_score).toFixed(1)}
+              </span>
             </div>
 
-            <div className="flex items-center text-xs text-gray-500 font-medium pt-4 border-t border-white/5 mt-auto">
-              <Clock className="w-3 h-3 mr-1" />
-              {new Date(rec.digest.created_at).toLocaleDateString()}
-              <ExternalLink className="w-3 h-3 ml-auto opacity-0 group-hover/card:opacity-100 transition-opacity" />
+            <h3 className="font-display text-[1.125rem] sm:text-[1.2rem] leading-snug mb-3 pr-6">
+              <a
+                href={rec.digest.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ink hover:text-accent transition-colors underline-offset-4 hover:underline inline-flex gap-1 items-start"
+              >
+                {rec.digest.title}
+                <ArrowUpRight
+                  className="w-4 h-4 shrink-0 mt-0.5 opacity-40 group-hover/card:opacity-100 transition-opacity"
+                  strokeWidth={2}
+                  aria-hidden
+                />
+              </a>
+            </h3>
+
+            <p className="digest-prose line-clamp-4 mb-5 flex-1">{rec.digest.summary}</p>
+
+            <blockquote className="text-[0.8125rem] leading-relaxed text-ink-muted border-l-2 border-accent/40 pl-3 mb-6 italic">
+              {rec.reasoning}
+            </blockquote>
+
+            <div className="mt-auto flex items-center gap-2 text-xs font-medium text-ink-faint pt-4 border-t border-line">
+              <Clock className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+              {displayedAt ? (
+                  <time dateTime={displayedAt.toISOString()}>
+                    {displayedAt.toLocaleDateString(undefined, {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </time>
+                ) : (
+                  <span>—</span>
+                )}
+              <ExternalLink className="w-3.5 h-3.5 ml-auto opacity-0 group-hover/card:opacity-60 transition-opacity" strokeWidth={2} aria-hidden />
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
     </details>
   );

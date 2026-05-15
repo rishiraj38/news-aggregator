@@ -1,9 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, CheckCircle2, XCircle, RefreshCw, Clock } from "lucide-react";
+import {
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Clock,
+  Activity,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
-type PipelineStatus = {
+type PipelineStatusRecord = {
   id: string;
   status: string;
   start_time: string;
@@ -13,15 +21,13 @@ type PipelineStatus = {
 };
 
 export function PipelineStatus() {
-  const [status, setStatus] = useState<PipelineStatus | null>(null);
+  const [status, setStatus] = useState<PipelineStatusRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const API_URL = ""; // Use local Next.js API route
-
   const fetchStatus = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/pipeline/status`);
+      const res = await fetch("/api/pipeline/status");
       if (!res.ok) throw new Error("Failed to fetch status");
       const data = await res.json();
       setStatus(data);
@@ -35,28 +41,27 @@ export function PipelineStatus() {
   };
 
   useEffect(() => {
-    // Initial fetch
     fetchStatus();
-
-    // Poll every 5 seconds
     const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
   if (loading && !status)
     return (
-      <div className="p-4 rounded-xl border bg-card text-card-foreground shadow-sm animate-pulse h-32">
-        <Loader2 />
+      <div className="rounded-lg border border-line bg-surface p-8 flex items-center justify-center gap-3 text-ink-muted">
+        <Loader2 className="w-5 h-5 animate-spin text-accent shrink-0" />
+        <span className="text-sm">Checking pipeline…</span>
       </div>
     );
 
   if (error)
     return (
-      <div className="p-4 rounded-xl border border-red-200 bg-red-50 text-red-700">
-        <h3 className="font-semibold flex items-center gap-2">
-          <XCircle className="w-5 h-5" /> Pipeline Disconnected
+      <div className="rounded-lg border border-red-900/50 bg-red-950/25 px-5 py-4 text-red-200/95">
+        <h3 className="font-semibold flex items-center gap-2 text-sm">
+          <XCircle className="w-4 h-4 shrink-0 text-red-400" strokeWidth={2} />
+          Pipeline unreachable
         </h3>
-        <p className="text-sm mt-1">{error}</p>
+        <p className="text-xs text-red-200/70 mt-2 leading-relaxed">{error}</p>
       </div>
     );
 
@@ -65,45 +70,45 @@ export function PipelineStatus() {
   const isFailed = status?.status === "FAILED";
   const isIdle = status?.status === "IDLE";
 
+  const badgeStyles = cn(
+    "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border",
+    isRunning && "border-blue-500/35 bg-blue-500/10 text-blue-200",
+    isSuccess && "border-emerald-500/35 bg-emerald-500/10 text-emerald-200",
+    isFailed && "border-red-500/35 bg-red-500/10 text-red-200",
+    isIdle && "border-line-strong bg-surface-raised text-ink-muted",
+  );
+
   return (
-    <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
-      <div className="p-6 pb-2">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-lg flex items-center gap-2">
-            System Status
-            {isRunning && (
-              <span className="flex h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-            )}
-          </h3>
-          <div
-            className={`px-2.5 py-0.5 rounded-full text-xs font-medium border flex items-center gap-1
-                        ${isRunning ? "bg-blue-100 text-blue-700 border-blue-200" : ""}
-                        ${isSuccess ? "bg-green-100 text-green-700 border-green-200" : ""}
-                        ${isFailed ? "bg-red-100 text-red-700 border-red-200" : ""}
-                        ${isIdle ? "bg-gray-100 text-gray-600 border-gray-200" : ""}
-                    `}
-          >
-            {isRunning && <RefreshCw className="w-3 h-3 animate-spin" />}
-            {isSuccess && <CheckCircle2 className="w-3 h-3" />}
-            {isFailed && <XCircle className="w-3 h-3" />}
-            {status?.status || "UNKNOWN"}
-          </div>
-        </div>
+    <div className="rounded-lg border border-line bg-surface overflow-hidden">
+      <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-line flex flex-wrap items-center justify-between gap-3">
+        <h3 className="font-display text-lg tracking-tight flex items-center gap-2">
+          <Activity className="w-5 h-5 text-accent shrink-0" strokeWidth={1.75} />
+          System status
+          {isRunning && (
+            <span className="flex h-2 w-2 rounded-full bg-blue-400 animate-pulse" aria-hidden />
+          )}
+        </h3>
+        <span className={badgeStyles}>
+          {isRunning && <RefreshCw className="w-3 h-3 animate-spin shrink-0" strokeWidth={2} />}
+          {isSuccess && <CheckCircle2 className="w-3 h-3 shrink-0 text-emerald-400" strokeWidth={2} />}
+          {isFailed && <XCircle className="w-3 h-3 shrink-0 text-red-400" strokeWidth={2} />}
+          {status?.status ?? "UNKNOWN"}
+        </span>
       </div>
 
-      <div className="p-6 pt-2 space-y-4">
+      <div className="px-5 py-5 sm:px-6 sm:pb-6 space-y-5">
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <span className="text-muted-foreground block text-xs">
-              Users Processed
+            <span className="text-ink-faint block text-xs uppercase tracking-wider mb-1">
+              Users processed
             </span>
-            <span className="font-medium">{status?.users_processed || 0}</span>
+            <span className="font-semibold tabular-nums text-ink">{status?.users_processed ?? "—"}</span>
           </div>
           <div>
-            <span className="text-muted-foreground block text-xs">
-              Last Run
+            <span className="text-ink-faint block text-xs uppercase tracking-wider mb-1">
+              Last run
             </span>
-            <span className="font-medium">
+            <span className="font-medium text-ink-muted text-[0.8125rem] leading-snug">
               {status?.start_time
                 ? new Date(status.start_time).toLocaleString()
                 : "Never"}
@@ -111,23 +116,22 @@ export function PipelineStatus() {
           </div>
         </div>
 
-        {/* Log Window */}
-        <div className="bg-zinc-950 rounded-lg p-3 font-mono text-xs text-zinc-300 h-48 overflow-y-auto whitespace-pre-wrap border border-zinc-800">
-          {status?.log_summary || "No logs available..."}
+        <div className="rounded-md bg-surface-deep border border-line p-3 font-mono text-[0.75rem] leading-relaxed text-ink-muted h-44 sm:h-48 overflow-y-auto whitespace-pre-wrap">
+          {status?.log_summary || "No logs yet."}
         </div>
 
         {isRunning && (
-          <p className="text-xs text-center text-muted-foreground animate-pulse">
-            Pipeline is active. Refreshing live...
+          <p className="text-xs text-center text-ink-faint animate-pulse">
+            Live refresh every 5s
           </p>
         )}
 
         {!isRunning && (
-          <div className="mt-4 pt-3 border-t border-zinc-800 flex items-center justify-between text-xs text-muted-foreground">
-            <span>Status: System Idle</span>
+          <div className="pt-4 border-t border-line flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-ink-faint">
+            <span>Idle — awaiting scheduler</span>
             <span className="flex items-center gap-1.5">
-              <Clock className="w-3 h-3" />
-              Next Scheduled Run: Today at 7:00 PM IST
+              <Clock className="w-3.5 h-3.5 shrink-0 text-accent/80" strokeWidth={2} />
+              Next run per cron configuration
             </span>
           </div>
         )}
