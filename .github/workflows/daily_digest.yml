@@ -41,11 +41,13 @@ jobs:
           GROQ_API_KEY2: ${{ secrets.GROQ_API_KEY2 }}
           MY_EMAIL: ${{ secrets.MY_EMAIL }}
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-          # Instagram autopost (after successful digest). Toggle via Repository Variables.
+          WEBSHARE_USERNAME: ${{ secrets.WEBSHARE_USERNAME }}
+          WEBSHARE_PASSWORD: ${{ secrets.WEBSHARE_PASSWORD }}
+          # Instagram autopost (after successful digest). Toggle: Repository Variable ENABLE_INSTAGRAM_AUTOPOST, or Secret same name if you prefer.
           ENABLE_INSTAGRAM_AUTOPOST: ${{ vars.ENABLE_INSTAGRAM_AUTOPOST }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          INSTAGRAM_BUSINESS_ID: ${{ vars.INSTAGRAM_BUSINESS_ID }}
-          META_GRAPH_MEDIA_BASE: ${{ vars.META_GRAPH_MEDIA_BASE }}
+          INSTAGRAM_BUSINESS_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
+          META_GRAPH_MEDIA_BASE: ${{ secrets.META_GRAPH_MEDIA_BASE }}
           # Optional overrides (Secrets if sensitive; omit to use publisher defaults).
           META_PUBLIC_IMAGE_UPLOAD: ${{ vars.META_PUBLIC_IMAGE_UPLOAD }}
           META_PUBLIC_IMAGE_UPLOAD_ORDER: ${{ vars.META_PUBLIC_IMAGE_UPLOAD_ORDER }}
