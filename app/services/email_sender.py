@@ -147,9 +147,10 @@ def markdown_to_html(markdown_text: str) -> str:
 </html>"""
 
 
-def digest_to_html(digest_response) -> str:
+def digest_to_html(digest_response, *, is_first_delivery: bool = False) -> str:
     from app.agent.email_agent import EmailDigestResponse
-    
+    from app.services.mail_links import first_digest_hero_html, social_footer_html
+
     if not isinstance(digest_response, EmailDigestResponse):
         return markdown_to_html(digest_response.to_markdown() if hasattr(digest_response, 'to_markdown') else str(digest_response))
     
@@ -181,7 +182,9 @@ def digest_to_html(digest_response) -> str:
         html_parts.append('<hr>')
     
     html_content = '\n'.join(html_parts)
-    
+    hero_html = first_digest_hero_html() if is_first_delivery else ""
+    footer_html = social_footer_html()
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -269,7 +272,9 @@ def digest_to_html(digest_response) -> str:
     </style>
 </head>
 <body>
+{hero_html}
 {html_content}
+{footer_html}
 </body>
 </html>"""
 

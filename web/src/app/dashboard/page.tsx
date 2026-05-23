@@ -72,10 +72,15 @@ export default async function Dashboard() {
   });
 
   return (
-    <div className="relative z-10 min-h-dvh bg-surface-deep text-ink">
+    <div className="relative z-10 min-h-dvh bg-surface-deep text-ink overflow-x-hidden">
+      <div className="pointer-events-none absolute inset-x-0 top-[3.75rem] h-[min(70vh,640px)] helix-aurora opacity-[0.45]" aria-hidden />
+      <div
+        className="pointer-events-none absolute inset-x-0 top-[5rem] h-[520px] helix-grid opacity-50"
+        aria-hidden
+      />
       <Navbar />
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-[calc(5rem+env(safe-area-inset-top))] pb-16 sm:pb-24">
+      <main className="relative max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-[calc(5rem+env(safe-area-inset-top))] pb-16 sm:pb-24">
         <header className="mb-10 sm:mb-12 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 border-b border-line pb-8">
           <div className="max-w-2xl">
             <p className="text-[0.8125rem] uppercase tracking-[0.2em] text-ink-faint font-medium mb-3">

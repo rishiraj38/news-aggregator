@@ -43,6 +43,11 @@ jobs:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           WEBSHARE_USERNAME: ${{ secrets.WEBSHARE_USERNAME }}
           WEBSHARE_PASSWORD: ${{ secrets.WEBSHARE_PASSWORD }}
+          # Newsletter footers / CTAs (Repository variables — public URLs)
+          HELIX_WEBSITE_URL: ${{ vars.HELIX_WEBSITE_URL }}
+          HELIX_PRICING_URL: ${{ vars.HELIX_PRICING_URL }}
+          HELIX_INSTAGRAM_URL: ${{ vars.HELIX_INSTAGRAM_URL }}
+          HELIX_INSTAGRAM_HANDLE: ${{ vars.HELIX_INSTAGRAM_HANDLE }}
 
         run: |
           python -m app.daily_runner

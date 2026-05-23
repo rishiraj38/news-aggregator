@@ -18,9 +18,35 @@ const ibmPlexSans = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Helix — Curated technical intelligence",
+  metadataBase:
+    typeof process.env.NEXT_PUBLIC_APP_URL === "string" && process.env.NEXT_PUBLIC_APP_URL
+      ? new URL(process.env.NEXT_PUBLIC_APP_URL)
+      : undefined,
+  title: {
+    default: "Helix — Curated technical intelligence",
+    template: "%s · Helix",
+  },
   description:
-    "Personalized digests from RSS and transcripts—ranked and summarized for people who build software.",
+    "A morning dossier for builders: transcripts, feeds, and repos distilled into ranked briefings tailored to how you ship.",
+  keywords: [
+    "technical digest",
+    "developer news",
+    "RSS summaries",
+    "AI curation",
+    "engineering briefing",
+  ],
+  openGraph: {
+    title: "Helix — Curated technical intelligence",
+    description:
+      "Personalized technical digests: what moved overnight, why it matters to your stack, links when you’re ready to go deep.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Helix — Curated technical intelligence",
+    description:
+      "Signal-over-noise digest for people who ship software. Ranked, summarized, shipped daily.",
+  },
 };
 
 export default function RootLayout({

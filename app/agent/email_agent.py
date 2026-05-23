@@ -70,7 +70,7 @@ class EmailAgent(BaseAgent):
         super().__init__("llama-3.3-70b-versatile")
         self.user_profile = user_profile
 
-    def generate_introduction(self, ranked_articles: List) -> EmailIntroduction:
+    def generate_introduction(self, ranked_articles: List, *, is_first_delivery: bool = False) -> EmailIntroduction:
         if not ranked_articles:
             return EmailIntroduction(
                 greeting=f"Hey {self.user_profile['name']}, here is your daily digest of AI news for {datetime.now().strftime('%B %d, %Y')}.",
@@ -84,12 +84,19 @@ class EmailAgent(BaseAgent):
         ])
         
         current_date = datetime.now().strftime('%B %d, %Y')
+        first_note = ""
+        if is_first_delivery:
+            first_note = """
+
+CONTEXT: This is the subscriber's VERY FIRST personalized Helix digest (not admin mail).
+Acknowledge warmly that they're set up — one short sentence — then preview the day's signal.
+Avoid inventing URLs, product claims, or @handles."""
         user_prompt = f"""Create an email introduction for {self.user_profile['name']} for {current_date}.
 
 Top 10 ranked articles:
 {article_summaries}
 
-Generate a greeting and introduction that previews these articles."""
+Generate a greeting and introduction that previews these articles.{first_note}"""
 
         try:
             # Explicitly request JSON output in the system prompt or user prompt
@@ -132,14 +139,21 @@ OUTPUT JSON format:
             ranked_articles=top_articles
         )
     
-    def create_email_digest_response(self, ranked_articles: List[RankedArticleDetail], total_ranked: int, limit: int = 10) -> EmailDigestResponse:
+    def create_email_digest_response(
+        self,
+        ranked_articles: List[RankedArticleDetail],
+        total_ranked: int,
+        limit: int = 10,
+        *,
+        is_first_delivery: bool = False,
+    ) -> EmailDigestResponse:
         top_articles = ranked_articles[:limit]
-        introduction = self.generate_introduction(top_articles)
-        
+        introduction = self.generate_introduction(top_articles, is_first_delivery=is_first_delivery)
+
         return EmailDigestResponse(
             introduction=introduction,
             articles=top_articles,
             total_ranked=total_ranked,
-            top_n=limit
+            top_n=limit,
         )
 

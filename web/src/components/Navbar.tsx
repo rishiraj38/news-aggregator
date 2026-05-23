@@ -14,7 +14,7 @@ export default function Navbar() {
     <>
       <Link
         href="/dashboard"
-        className="text-sm font-medium text-ink-muted hover:text-ink transition-colors"
+        className="hover-shine text-sm font-medium text-ink-muted hover:text-ink transition-colors"
         onClick={() => setIsOpen(false)}
       >
         Feed
@@ -22,7 +22,7 @@ export default function Navbar() {
       {!isSignedIn && (
         <a
           href="#pricing"
-          className="text-sm font-medium text-ink-muted hover:text-ink transition-colors"
+          className="hover-shine text-sm font-medium text-ink-muted hover:text-ink transition-colors"
           onClick={() => setIsOpen(false)}
         >
           Pricing
@@ -32,7 +32,11 @@ export default function Navbar() {
   );
 
   return (
-    <header className="fixed top-0 inset-x-0 z-[60] border-b border-line bg-surface-deep/85 backdrop-blur-md supports-[backdrop-filter]:bg-surface-deep/70">
+    <header className="fixed top-0 inset-x-0 z-[60] border-b border-line bg-surface-deep/80 backdrop-blur-xl supports-[backdrop-filter]:bg-surface-deep/65">
+      <div
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-accent/35 to-transparent"
+        aria-hidden
+      />
       <nav className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-[3.75rem] items-center justify-between gap-4">
           <Link
@@ -41,13 +45,19 @@ export default function Navbar() {
             onClick={() => setIsOpen(false)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt=""
-              width={32}
-              height={32}
-              className="object-contain opacity-90 group-hover:opacity-100 transition-opacity"
-            />
+            <span className="relative">
+              <span
+                className="absolute inset-0 rounded-full bg-brand/25 blur-lg scale-125 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                aria-hidden
+              />
+              <img
+                src="/logo.png"
+                alt=""
+                width={32}
+                height={32}
+                className="relative object-contain opacity-90 group-hover:opacity-100 transition-opacity"
+              />
+            </span>
             <span className="font-display text-[1.15rem] sm:text-xl text-ink tracking-tight">
               Helix
             </span>
@@ -61,14 +71,15 @@ export default function Navbar() {
                 afterSignOutUrl="/"
                 appearance={{
                   elements: {
-                    avatarBox: "w-9 h-9 ring-1 ring-line-strong",
+                    avatarBox:
+                      "w-9 h-9 ring-1 ring-line-strong hover:ring-accent/35 transition-[box-shadow]",
                   },
                 }}
               />
             ) : (
               <Link
                 href="/sign-in"
-                className="hidden sm:inline-flex items-center justify-center rounded-md bg-accent px-4 py-2 text-sm font-semibold text-surface-deep hover:brightness-110 transition-[filter]"
+                className="hidden sm:inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-surface-deep hover:brightness-110 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_32px_-18px_rgba(212,175,55,0.45)] transition-[filter] active:scale-[0.98]"
               >
                 Sign in
               </Link>
@@ -96,7 +107,7 @@ export default function Navbar() {
             {!isSignedIn && (
               <Link
                 href="/sign-in"
-                className="inline-flex w-full items-center justify-center rounded-md bg-accent px-4 py-3 text-sm font-semibold text-surface-deep min-h-11"
+                className="inline-flex w-full items-center justify-center rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-surface-deep min-h-11 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_32px_-18px_rgba(212,175,55,0.45)]"
                 onClick={() => setIsOpen(false)}
               >
                 Sign in

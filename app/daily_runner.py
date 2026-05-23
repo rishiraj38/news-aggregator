@@ -315,9 +315,14 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                      log_progress(msg)
                      continue
 
-                # 4. Send Email
-                # We need to adapt send_digest_email to take a user object and list of recommendations
-                email_result = send_personalized_email(user, user_profile, final_articles_to_send)
+                # 4. Send Email — editorial upgrade on very first curated send (Instagram + hero in digest)
+                first_helix_digest = len(seen_digest_ids) == 0
+                email_result = send_personalized_email(
+                    user,
+                    user_profile,
+                    final_articles_to_send,
+                    is_first_delivery=first_helix_digest,
+                )
                 
                 if email_result["success"]:
                     email_count += 1
