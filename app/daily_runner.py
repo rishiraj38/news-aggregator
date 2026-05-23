@@ -1,7 +1,13 @@
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(_REPO_ROOT / "app" / ".env")
+load_dotenv(_REPO_ROOT / ".env")
+
 
 from app.runner import run_scrapers
 from app.services.process_anthropic import process_anthropic_markdown
@@ -11,8 +17,6 @@ from app.services.process_email import send_digest_email
 from app.database.models import Base
 from app.database.connection import engine
 from app.database.repository import Repository
-
-load_dotenv()
 
 
 logging.basicConfig(
@@ -25,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 def _maybe_run_instagram_autopost(log_progress) -> None:
     """
-    If ENABLE_INSTAGRAM_AUTOPOST=true and Meta/Imgur env is set, post today's card after the pipeline.
+    If ENABLE_INSTAGRAM_AUTOPOST=true and Meta env is set, post today's card after the pipeline.
     """
     import subprocess
     import sys
