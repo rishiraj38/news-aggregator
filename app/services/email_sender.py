@@ -6,6 +6,8 @@ from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
 import markdown
 
+from app.services.thumbnail_resolve import best_youtube_still, sharpen_public_thumbnail_url
+
 load_dotenv()
 
 MY_EMAIL = os.getenv("MY_EMAIL")
@@ -48,13 +50,13 @@ def resolve_article_thumbnail_url(article) -> str | None:
     """Best URL for `<img>`: stored image, or YouTube default thumb by digest id."""
     url = getattr(article, "image_url", None)
     if url:
-        return url
+        return sharpen_public_thumbnail_url(url) or url
     atype = getattr(article, "article_type", None) or ""
     did = getattr(article, "digest_id", "") or ""
     if atype == "youtube" and did:
         _, _, vid = did.partition(":")
         if vid:
-            return f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+            return best_youtube_still(vid)
     return None
 
 
@@ -169,10 +171,10 @@ def digest_to_html(digest_response, *, is_first_delivery: bool = False) -> str:
             safe_url = html.escape(article.url, quote=True)
             html_parts.append(
                 f'<a href="{safe_url}" style="text-decoration:none;display:block">'
-                f'<img src="{safe_src}" alt="{safe_title}" width="560" border="0" '
-                'class="article-thumb" '
-                'style="display:block;max-width:560px;width:100%;height:auto;'
-                'border:0;line-height:100%;outline:none;text-decoration:none;border-radius:8px" />'
+                f'<img src="{safe_src}" alt="{safe_title}" border="0" class="article-thumb" '
+                'style="display:block;width:100%;max-width:560px;height:auto;margin:8px auto 12px;'
+                'border:0;border-radius:8px;line-height:100%;outline:none;text-decoration:none;'
+                'object-fit:contain" />'
                 f"</a>"
             )
         html_parts.append(f'<h3>{html.escape(article.title)}</h3>')

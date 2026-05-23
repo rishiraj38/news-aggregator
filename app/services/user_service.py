@@ -1,7 +1,8 @@
 import json
-from typing import Optional, Dict
+from typing import Any, Mapping, Optional, Dict
 from app.database.repository import Repository
 from app.database.models import User
+from app.topic_packs.registry import TOPIC_LABELS, normalize_user_topics
 
 class UserService:
     def __init__(self):
@@ -19,20 +20,34 @@ class UserService:
         pref_json = json.dumps(preferences)
         return self.repo.update_user_preferences(user_id, pref_json)
 
+    def get_prefs_dict(self, user: User) -> Dict[str, Any]:
+        try:
+            return dict(json.loads(user.preferences))
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return {}
+
     def get_user_profile(self, user: User) -> Dict:
         """
         Reconstructs the full user profile dictionary expected by agents.
         """
-        try:
-            prefs = json.loads(user.preferences)
-        except json.JSONDecodeError:
-            prefs = {}
-            
+        prefs: Mapping[str, Any] = self.get_prefs_dict(user)
+
+        interests = prefs.get("interests") or prefs.get("keywords") or []
+        if not isinstance(interests, list):
+            interests = [str(interests)] if interests else []
+
+        topics_norm = normalize_user_topics(prefs)
+        topic_labels = [TOPIC_LABELS[t] for t in topics_norm if t in TOPIC_LABELS]
+
         return {
             "name": user.name,
             "title": user.title,
             "background": f"{user.title} - {user.expertise_level}", # Synthesized background
             "expertise_level": user.expertise_level,
-            "interests": prefs.get("interests", []),
+            "interests": interests,
+            "topics": topics_norm,
+            "topic_labels": topic_labels,
             "preferences": prefs.get("config", {})
+            if isinstance(prefs.get("config"), dict)
+            else {},
         }

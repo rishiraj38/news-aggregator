@@ -14,25 +14,37 @@ class RankedDigestList(BaseModel):
     articles: List[RankedArticle] = Field(description="List of ranked articles")
 
 
-CURATOR_PROMPT = """You are an expert AI news curator specializing in personalized content ranking for AI professionals.
+CURATOR_PROMPT = """You are an expert news curator for busy professionals across technology, politics, and sports domains.
 
-Your role is to analyze and rank AI-related news articles, research papers, and video content based on a user's specific profile, interests, and background.
+Digests arrive from multiple publishers (labs, transcripts, curated RSS bundles). Rank them by how well each story earns the subscriber's scarce attention—not by hype.
 
-Ranking Criteria:
-1. Relevance to user's stated interests and background
-2. Technical depth and practical value
-3. Novelty and significance of the content
-4. Alignment with user's expertise level
-5. Actionability and real-world applicability
+Ranking criteria (combined):
+• Fit to the subscriber's topic bundles plus keyword cues below
+• Source credibility and specificity (named facts > vague punditry when tie-breaking)
+• Actionability and depth appropriate to stated expertise level
+• Novelty versus obvious rehash headlines
 
-Scoring Guidelines:
-- 9.0-10.0: Highly relevant, directly aligns with user interests, significant value
-- 7.0-8.9: Very relevant, strong alignment with interests, good value
-- 5.0-6.9: Moderately relevant, some alignment, decent value
-- 3.0-4.9: Somewhat relevant, limited alignment, lower value
-- 0.0-2.9: Low relevance, minimal alignment, little value
+Scores 9–10: must-read aligned with bundles or keywords • 7–8.9 strong match • 5–6.9 useful context • Below 5: diminishing returns.
 
-Rank articles from most relevant (rank 1) to least relevant. Ensure each article has a unique rank."""
+Produce a strict total order (unique ranks 1 … N).
+"""
+
+USER_PROFILE_SECTION = """
+
+User Profile:
+Name: {name}
+Background: {background}
+Expertise Level: {expertise_level}
+
+Subscriber topic bundles:
+{topics}
+
+Keywords & fine-grained cues (prioritize overlap when breaking ties):
+{interests}
+
+Preferences / profile notes:
+{pref_text}
+"""
 
 
 class CuratorAgent(BaseAgent):
@@ -45,19 +57,21 @@ class CuratorAgent(BaseAgent):
         interests = "\n".join(f"- {interest}" for interest in self.user_profile["interests"])
         preferences = self.user_profile["preferences"]
         pref_text = "\n".join(f"- {k}: {v}" for k, v in preferences.items())
-        
-        return f"""{CURATOR_PROMPT}
+        topics = "\n".join(
+            f"- {lbl}" for lbl in self.user_profile.get("topic_labels") or []
+        )
 
-User Profile:
-Name: {self.user_profile["name"]}
-Background: {self.user_profile["background"]}
-Expertise Level: {self.user_profile["expertise_level"]}
-
-Interests:
-{interests}
-
-Preferences:
-{pref_text}"""
+        return (
+            CURATOR_PROMPT
+            + USER_PROFILE_SECTION.format(
+                name=self.user_profile["name"],
+                background=self.user_profile["background"],
+                expertise_level=self.user_profile["expertise_level"],
+                topics=topics or "- General briefing",
+                interests=interests or "- Broad reader",
+                pref_text=pref_text or "(none)",
+            )
+        )
 
     def rank_digests(self, digests: List[dict]) -> List[RankedArticle]:
         if not digests:
@@ -68,11 +82,11 @@ Preferences:
             for d in digests
         ])
         
-        user_prompt = f"""Rank these {len(digests)} AI news digests based on the user profile:
+        user_prompt = f"""Rank these {len(digests)} news digests for this subscriber profile:
 
 {digest_list}
 
-Provide a relevance score (0.0-10.0) and rank (1-{len(digests)}) for each article.
+Provide a relevance score (0.0-10.0) and rank (1-{len(digests)}) for each item.
 
 CRITICAL rules:
 • For every object, set `"digest_id"` to the EXACT string shown on the `ID:` line for that digest (character-for-character, including colons).

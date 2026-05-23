@@ -154,3 +154,312 @@ body::after {
     animation: helix-float 8s ease-in-out infinite;
   }
 }
+
+/* ── Gemini-style briefing reveal (dashboard) ────────────────────────── */
+.briefing-reveal-viewport-bg {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% 20%, rgba(79, 70, 229, 0.14), transparent 58%),
+    radial-gradient(ellipse 90% 60% at 80% 90%, rgba(212, 175, 55, 0.09), transparent 52%),
+    rgba(7, 6, 5, 0.78);
+}
+
+.briefing-reveal-vignette {
+  background: radial-gradient(ellipse 85% 70% at 50% 45%, transparent 36%, rgba(7, 6, 5, 0.55) 100%);
+}
+
+@keyframes briefing-blob-a {
+  0%,
+  100% {
+    transform: translate(-8%, -6%) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(10%, 8%) scale(1.12);
+    opacity: 0.78;
+  }
+}
+
+@keyframes briefing-blob-b {
+  0%,
+  100% {
+    transform: translate(6%, 10%) scale(1.05);
+    opacity: 0.45;
+  }
+  45% {
+    transform: translate(-12%, -4%) scale(0.94);
+    opacity: 0.7;
+  }
+}
+
+@keyframes briefing-blob-c {
+  0%,
+  100% {
+    transform: translate(4%, -12%) scale(1.02);
+    opacity: 0.4;
+  }
+  55% {
+    transform: translate(-8%, 6%) scale(1.15);
+    opacity: 0.65;
+  }
+}
+
+@keyframes briefing-blob-gold {
+  0%,
+  100% {
+    transform: translate(-4%, 8%) scale(1);
+    opacity: 0.32;
+  }
+  40% {
+    transform: translate(6%, -6%) scale(1.08);
+    opacity: 0.52;
+  }
+}
+
+@keyframes briefing-grid-sheen {
+  0% {
+    opacity: 0.12;
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    opacity: 0.22;
+    transform: translate3d(-2%, -1%, 0);
+  }
+  100% {
+    opacity: 0.12;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes briefing-ray-sweep {
+  0% {
+    transform: translateY(-100%) skewY(-6deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.14;
+  }
+  55% {
+    opacity: 0.18;
+  }
+  100% {
+    transform: translateY(120%) skewY(-6deg);
+    opacity: 0;
+  }
+}
+
+@keyframes briefing-glass-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(240, 235, 227, 0.07),
+      0 0 48px -10px rgba(129, 140, 248, 0.28);
+  }
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(212, 175, 55, 0.12),
+      0 0 64px -8px rgba(212, 175, 55, 0.15);
+  }
+}
+
+@keyframes briefing-icon-pop {
+  0% {
+    transform: scale(0.88) rotate(-8deg);
+    opacity: 0.5;
+  }
+  55% {
+    transform: scale(1.04) rotate(4deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes briefing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes briefing-spin-halo {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.briefing-reveal-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  mix-blend-mode: screen;
+  will-change: transform, opacity;
+}
+
+.briefing-reveal-blob-a {
+  width: min(72vw, 520px);
+  height: min(72vw, 520px);
+  left: -12%;
+  top: 8%;
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.55) 0%, transparent 68%);
+}
+
+.briefing-reveal-blob-b {
+  width: min(88vw, 680px);
+  height: min(88vw, 680px);
+  right: -18%;
+  bottom: -8%;
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.35) 0%, transparent 70%);
+}
+
+.briefing-reveal-blob-c {
+  width: min(60vw, 440px);
+  height: min(60vw, 440px);
+  left: 28%;
+  bottom: 12%;
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.45) 0%, transparent 72%);
+}
+
+.briefing-reveal-blob-gold {
+  width: min(50vw, 380px);
+  height: min(50vw, 380px);
+  right: 22%;
+  top: 4%;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.28) 0%, transparent 75%);
+}
+
+.briefing-reveal-ray {
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(240, 235, 227, 0.04) 45%,
+    rgba(212, 175, 55, 0.05) 50%,
+    transparent
+  );
+  mix-blend-mode: overlay;
+}
+
+.briefing-reveal-spin-halo {
+  position: absolute;
+  width: 11.5rem;
+  height: 11.5rem;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(129, 140, 248, 0.65),
+    rgba(212, 175, 55, 0.45),
+    rgba(56, 189, 248, 0.5),
+    rgba(79, 70, 229, 0.7),
+    rgba(129, 140, 248, 0.65)
+  );
+  opacity: 0.38;
+  filter: blur(10px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .briefing-reveal-blob-a {
+    animation: briefing-blob-a 19s ease-in-out infinite;
+  }
+  .briefing-reveal-blob-b {
+    animation: briefing-blob-b 23s ease-in-out infinite 1.5s;
+  }
+  .briefing-reveal-blob-c {
+    animation: briefing-blob-c 21s ease-in-out infinite 0.8s;
+  }
+  .briefing-reveal-blob-gold {
+    animation: briefing-blob-gold 17s ease-in-out infinite 2.2s;
+  }
+  .briefing-reveal-grid-sheen {
+    animation: briefing-grid-sheen 14s ease-in-out infinite;
+  }
+  .briefing-reveal-ray {
+    animation: briefing-ray-sweep 11s ease-in-out infinite;
+  }
+  .briefing-reveal-glass-pulse {
+    animation: briefing-glass-pulse 4.2s ease-in-out infinite;
+  }
+  .briefing-reveal-icon-pop {
+    animation: briefing-icon-pop 1.2s cubic-bezier(0.16, 1, 0.3, 1) backwards 0.15s;
+  }
+  .briefing-reveal-rise {
+    animation: briefing-rise 0.88s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+  .briefing-rise-d140 {
+    animation-delay: 140ms;
+  }
+  .briefing-rise-d220 {
+    animation-delay: 220ms;
+  }
+  .briefing-rise-d300 {
+    animation-delay: 300ms;
+  }
+  .briefing-rise-d420 {
+    animation-delay: 420ms;
+  }
+  .briefing-rise-d540 {
+    animation-delay: 540ms;
+  }
+  .briefing-rise-d640 {
+    animation-delay: 640ms;
+  }
+  .briefing-spin-slow {
+    animation: briefing-spin-halo 28s linear infinite;
+  }
+}
+
+/* Soft auth-page ambient (sign-in / sign-up) */
+@keyframes briefing-auth-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate(3%, -4%) scale(1.06);
+    opacity: 0.5;
+  }
+}
+
+.briefing-auth-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px);
+  mix-blend-mode: screen;
+  will-change: transform;
+}
+
+.briefing-auth-a {
+  width: min(70vw, 420px);
+  height: min(70vw, 420px);
+  left: -10%;
+  top: 15%;
+  background: radial-gradient(circle, rgba(129, 140, 248, 0.4) 0%, transparent 70%);
+}
+
+.briefing-auth-b {
+  width: min(85vw, 520px);
+  height: min(85vw, 520px);
+  right: -15%;
+  bottom: 0;
+  background: radial-gradient(circle, rgba(212, 175, 55, 0.16) 0%, transparent 72%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .briefing-auth-a {
+    animation: briefing-auth-drift 22s ease-in-out infinite;
+  }
+  .briefing-auth-b {
+    animation: briefing-auth-drift 26s ease-in-out infinite 3s;
+  }
+}

@@ -4,6 +4,7 @@ import { WebhookEvent } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
 import { sendWelcomeEmail } from "@/lib/email";
 import { getRecentDigests } from "@/lib/get-digest";
+import { ALLOWED_TOPIC_IDS } from "@/lib/topics";
 
 export async function POST(req: Request) {
   // Get the Svix headers for verification
@@ -57,9 +58,12 @@ export async function POST(req: Request) {
     try {
       // Create user in database
       const preferences = JSON.stringify({
-        keywords: ["LLMs", "Agents", "Embeddings", "Fine-tuning", "RAG"],
-        negative_prompts: [],
-        detail_depth: "technical",
+        interests: ["World news", "Cricket", "Politics", "Technology"],
+        topics: [...ALLOWED_TOPIC_IDS],
+        config: {
+          detail_depth: "mixed",
+          prefer_technical_depth: false,
+        },
       });
 
       await db.user.create({

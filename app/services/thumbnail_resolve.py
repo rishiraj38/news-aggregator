@@ -6,11 +6,76 @@ import html as html_std
 import logging
 import re
 from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse, urljoin
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+_YOUTUBE_IMG_RE = re.compile(
+    r"https?://i\.ytimg\.com/vi/([^/]+)/(?:default|mqdefault|hqdefault|sddefault|maxresdefault)\.jpg",
+    re.I,
+)
+
+
+def best_youtube_still(video_id: str, *, timeout: float = 3.0) -> str:
+    """
+    Prefer the largest sensible YouTube still. maxres exists for HD uploads; hq/sd fall back cleanly.
+    Skips degenerate tiny maxres responses (covers missing poster).
+    """
+    variants = ("maxresdefault", "sddefault", "hqdefault", "mqdefault", "default")
+    base = f"https://i.ytimg.com/vi/{video_id}"
+    fallback = f"{base}/hqdefault.jpg"
+    for name in variants:
+        u = f"{base}/{name}.jpg"
+        try:
+            r = requests.head(u, timeout=timeout, allow_redirects=True)
+            if r.status_code != 200:
+                continue
+            cl = int(r.headers.get("Content-Length", "0") or "0")
+            if name == "maxresdefault" and 0 < cl < 3800:
+                continue
+            if cl == 0:
+                continue
+            return u
+        except requests.RequestException:
+            continue
+    return fallback
+
+
+def sharpen_public_thumbnail_url(url: Optional[str]) -> Optional[str]:
+    """Upgrade known CDN thumbnails right before embedding in HTML (no ingest-time cost)."""
+    if not url or not isinstance(url, str):
+        return url
+    m = _YOUTUBE_IMG_RE.search(url.strip())
+    if m:
+        return best_youtube_still(m.group(1))
+    if "ichef.bbci.co.uk" in url and "?" in url:
+        return _bbc_ichef_widen(url)
+    return url
+
+
+def _bbc_ichef_widen(url: str) -> str:
+    """When BBC ichef URLs carry a pixel width hint, bump it for sharper email previews."""
+    try:
+        parsed = urlparse(url)
+        q = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)]
+        changed = False
+        out_q: list[tuple[str, str]] = []
+        for k, v in q:
+            if k.lower() in ("width", "w") and v.isdigit() and int(v) > 0 and int(v) < 976:
+                out_q.append((k, "976"))
+                changed = True
+            else:
+                out_q.append((k, v))
+        if changed:
+            new_query = urlencode(out_q)
+            return urlunparse(parsed._replace(query=new_query))
+    except Exception:
+        pass
+    return url
+
+
 
 # First <img src="..."> in HTML summaries (common on TechCrunch, Verge, etc.)
 _IMG_SRC_RE = re.compile(r"""<img[^>]+src\s*=\s*['"]([^'"]+)['"]""", re.IGNORECASE)
@@ -103,5 +168,5 @@ def fetch_og_or_twitter_image(page_url: str, timeout: float = 6.0) -> Optional[s
         if m:
             url = normalize_image_url(page_url, m.group(1))
             if url:
-                return url
+                return sharpen_public_thumbnail_url(url) or url
     return None

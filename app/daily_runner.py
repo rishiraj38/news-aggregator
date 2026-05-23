@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
@@ -17,6 +18,7 @@ from app.services.process_email import send_digest_email
 from app.database.models import Base
 from app.database.connection import engine
 from app.database.repository import Repository
+from app.topic_packs.registry import digest_matches_topics
 
 
 logging.basicConfig(
@@ -102,15 +104,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             log_progress("\n[1/5] Scraping articles from sources...")
             scraping_results = run_scrapers(hours=hours)
             results["scraping"] = {
-                "youtube": len(scraping_results.get("youtube", [])),
-                "openai": len(scraping_results.get("openai", [])),
-                "anthropic": len(scraping_results.get("anthropic", [])),
+                k: len(v) if isinstance(v, list) else 0 for k, v in scraping_results.items()
             }
-            logger.info(
-                f"✓ Scraped {results['scraping']['youtube']} YouTube videos, "
-                f"{results['scraping']['openai']} OpenAI articles, "
-                f"{results['scraping']['anthropic']} Anthropic articles"
-            )
+            logger.info("✓ Scrape summary: %s", ", ".join(f"{k}={results['scraping'][k]}" for k in sorted(results["scraping"].keys())))
             _update_last_scrape()
 
 
@@ -250,18 +246,39 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 logger.debug(f"Seen IDs sample: {list(seen_digest_ids)[:5] if seen_digest_ids else []}")
                 
                 unseen_digests = [d for d in recent_digests if d['id'] not in seen_digest_ids]
-                
                 if not unseen_digests:
                     msg = f"No new digests for {user.name} (All {len(recent_digests)} recent items already recommended). Skipping."
                     logger.info(msg)
                     log_progress(msg)
-                    import time; time.sleep(0.5) # Small sleep to avoid instant loops looking like bugs
+                    time.sleep(0.5)  # Small sleep to avoid instant loops looking like bugs
+                    continue
+
+                topic_set = set(user_profile["topics"])
+                before_topics = len(unseen_digests)
+                unseen_digests = [
+                    d for d in unseen_digests if digest_matches_topics(d["article_type"], topic_set)
+                ]
+                if before_topics != len(unseen_digests):
+                    log_progress(
+                        f"Topic bundles {sorted(topic_set)} → "
+                        f"{len(unseen_digests)} / {before_topics} new digests after filter"
+                    )
+
+                if not unseen_digests:
+                    msg = (
+                        f"No digest candidates matched topic bundles {sorted(topic_set)} for {user.name} "
+                        "(new items existed but none in your bundles — expand topics or wait for matching coverage)."
+                    )
+                    logger.info(msg)
+                    log_progress(msg)
+                    time.sleep(0.5)
                     continue
                 
                 logger.info(f"Ranking {len(unseen_digests)} new digests for {user.name} (out of {len(recent_digests)} total recent)...")
 
                 # 2. Rank Content
                 curator = CuratorAgent(user_profile)
+                digest_by_id = {d["id"]: d for d in unseen_digests}
                 ranked_articles = curator.rank_digests(unseen_digests)
                 
                 if not ranked_articles:
@@ -270,8 +287,20 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     log_progress(msg)
                     continue
 
+                from app.topic_packs.diversify import diversify_curated_pick
+
+                diversified = diversify_curated_pick(
+                    ranked_articles,
+                    digest_by_id,
+                    topic_set,
+                    top_n,
+                )
+                ranked_ordered = []
+                for idx, article in enumerate(diversified, start=1):
+                    ranked_ordered.append(article.model_copy(update={"rank": idx}))
+
                 # 3. Save Recommendations
-                top_articles = ranked_articles[:top_n]
+                top_articles = ranked_ordered
                 new_recommendations = []
                 final_articles_to_send = []
 
@@ -335,7 +364,6 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             
             # Rate Limit Protection (Groq has RPM limits)
             # Increased to 10s to stay safely below 30 RPM (approx 6 RPM)
-            import time
             logger.info("Sleeping 10s to respect Groq Rate Limits...")
             time.sleep(10)
         

@@ -1,3 +1,5 @@
+from app.topic_packs.registry import TOPIC_LABELS, normalize_user_topics
+
 USER_PROFILE = {
     "name": "Rishi",
     "title": "AI Engineer & Researcher",
@@ -12,15 +14,22 @@ USER_PROFILE = {
         "Real-world AI applications and case studies",
         "Technical tutorials and implementation guides",
         "Research papers with practical implications",
-        "AI infrastructure and scaling challenges"
+        "AI infrastructure and scaling challenges",
     ],
     "preferences": {
         "prefer_practical": True,
         "prefer_technical_depth": True,
         "prefer_research_breakthroughs": True,
         "prefer_production_focus": True,
-        "avoid_marketing_hype": True
+        "avoid_marketing_hype": True,
     },
-    "expertise_level": "Advanced"
+    "expertise_level": "Advanced",
 }
 
+_synth_topics = normalize_user_topics(
+    {"interests": USER_PROFILE["interests"], "config": USER_PROFILE["preferences"]},
+)
+USER_PROFILE["topics"] = _synth_topics
+USER_PROFILE["topic_labels"] = [
+    TOPIC_LABELS[t] for t in _synth_topics if t in TOPIC_LABELS
+]

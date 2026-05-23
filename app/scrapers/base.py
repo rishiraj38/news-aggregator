@@ -1,12 +1,15 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from abc import ABC, abstractmethod
+import logging
 import os
 import feedparser
 import requests
 from pydantic import BaseModel
 
 from app.services.thumbnail_resolve import extract_first_img_from_html
+
+_logger = logging.getLogger(__name__)
 
 
 def collect_entry_html_fragments(entry) -> List[str]:
@@ -51,17 +54,46 @@ def get_proxy_handler():
 
 
 def extract_feed_entry_image_url(entry) -> Optional[str]:
-    """Best-effort thumbnail from RSS/Atom (media_thumbnail, media_content, enclosures, image)."""
-    thumbs = getattr(entry, "media_thumbnail", None) or getattr(entry, "media_thumbnails", None)
-    if thumbs:
-        t0 = thumbs[0]
+    """Prefer the largest advertised media:thumbnail when the feed publishes several sizes."""
+
+    def _dim_int(raw) -> int:
+        if raw is None:
+            return 0
+        if isinstance(raw, bool):
+            return 0
+        if isinstance(raw, int):
+            return max(0, raw)
+        s = str(raw).strip().split()[0] if str(raw).strip() else ""
+        if not s.isdigit():
+            return 0
+        return max(0, int(s))
+
+    def _dimensions(t) -> tuple[Optional[str], int]:
         u = None
-        if isinstance(t0, dict):
-            u = t0.get("url")
+        if isinstance(t, dict):
+            u = t.get("url") or t.get("href")
+            w = _dim_int(t.get("width"))
+            h = _dim_int(t.get("height"))
+        else:
+            u = getattr(t, "url", None) or getattr(t, "href", None)
+            w = _dim_int(getattr(t, "width", None))
+            h = _dim_int(getattr(t, "height", None))
         if not u:
-            u = getattr(t0, "url", None) or getattr(t0, "href", None)
-        if u:
-            return u
+            return None, 0
+        area = max(w * h, w, h, 1)
+        return str(u).strip(), int(area)
+
+    raw_thumbs = getattr(entry, "media_thumbnail", None) or getattr(entry, "media_thumbnails", None)
+    if raw_thumbs:
+        thumbs_list = raw_thumbs if isinstance(raw_thumbs, (list, tuple)) else [raw_thumbs]
+        ranked: list[tuple[str, int]] = []
+        for t in thumbs_list:
+            u, score = _dimensions(t)
+            if u:
+                ranked.append((u, score))
+        if ranked:
+            ranked.sort(key=lambda item: item[1], reverse=True)
+            return ranked[0][0]
 
     for attr in ("media_content",):
         contents = getattr(entry, attr, None)
@@ -117,38 +149,43 @@ class BaseScraper(ABC):
         proxy_handler = get_proxy_handler()
 
         for rss_url in self.rss_urls:
-            if proxy_handler:
-                response = requests.get(rss_url, timeout=30)
-                feed = feedparser.parse(response.content)
-            else:
-                feed = feedparser.parse(rss_url)
+            try:
+                if proxy_handler:
+                    response = requests.get(rss_url, timeout=30)
+                    response.raise_for_status()
+                    feed = feedparser.parse(response.content)
+                else:
+                    feed = feedparser.parse(rss_url)
 
-            if not feed.entries:
-                continue
-
-            for entry in feed.entries:
-                published_parsed = getattr(entry, "published_parsed", None)
-                if not published_parsed:
+                if not feed.entries:
                     continue
 
-                published_time = datetime(*published_parsed[:6], tzinfo=timezone.utc)
-                if published_time >= cutoff_time:
-                    guid = entry.get("id", entry.get("link", ""))
-                    if guid not in seen_guids:
-                        seen_guids.add(guid)
-                        link = entry.get("link", "")
-                        articles.append(
-                            Article(
-                                title=entry.get("title", ""),
-                                description=entry.get("description", ""),
-                                url=link,
-                                guid=guid,
-                                published_at=published_time,
-                                category=entry.get("tags", [{}])[0].get("term")
-                                if entry.get("tags")
-                                else None,
-                                image_url=rss_entry_thumbnail_url(entry, link),
+                for entry in feed.entries:
+                    published_parsed = getattr(entry, "published_parsed", None)
+                    if not published_parsed:
+                        continue
+
+                    published_time = datetime(*published_parsed[:6], tzinfo=timezone.utc)
+                    if published_time >= cutoff_time:
+                        guid = entry.get("id", entry.get("link", ""))
+                        if guid not in seen_guids:
+                            seen_guids.add(guid)
+                            link = entry.get("link", "")
+                            articles.append(
+                                Article(
+                                    title=entry.get("title", ""),
+                                    description=entry.get("description", ""),
+                                    url=link,
+                                    guid=guid,
+                                    published_at=published_time,
+                                    category=entry.get("tags", [{}])[0].get("term")
+                                    if entry.get("tags")
+                                    else None,
+                                    image_url=rss_entry_thumbnail_url(entry, link),
+                                )
                             )
-                        )
+            except Exception as exc:
+                _logger.warning("Skipping RSS endpoint %s: %s", rss_url, exc)
+                continue
 
         return articles

@@ -1,6 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field
+
+from app.services.thumbnail_resolve import best_youtube_still, sharpen_public_thumbnail_url
+
 from .base import BaseAgent
 
 
@@ -35,10 +38,12 @@ class EmailDigestResponse(BaseModel):
         for article in self.articles:
             markdown += f"## {article.title}\n\n"
             thumb = article.image_url
+            if thumb:
+                thumb = sharpen_public_thumbnail_url(thumb) or thumb
             if not thumb and article.article_type == "youtube":
                 vid = article.digest_id.split(":", 1)[-1] if article.digest_id else ""
                 if vid:
-                    thumb = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+                    thumb = best_youtube_still(vid)
             if thumb:
                 markdown += f"![]({thumb})\n\n"
             markdown += f"{article.summary}\n\n"

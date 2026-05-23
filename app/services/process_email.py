@@ -10,7 +10,11 @@ from app.profiles.user_profile import USER_PROFILE
 from app.database.repository import Repository
 from app.services.email_sender import send_email, digest_to_html
 from app.services.mail_links import social_footer_markdown
-from app.services.thumbnail_resolve import fetch_og_or_twitter_image
+from app.services.thumbnail_resolve import (
+    best_youtube_still,
+    fetch_og_or_twitter_image,
+    sharpen_public_thumbnail_url,
+)
 
 
 logging.basicConfig(
@@ -25,23 +29,26 @@ def _resolve_thumbnail_for_digest(d: dict, og_cache: dict) -> str | None:
     """Stored thumb, YouTube default, then one-page OG/Twitter image fetch per article URL."""
     img = d.get("image_url")
     if img:
-        return img
+        return sharpen_public_thumbnail_url(img) or img
     if d.get("article_type") == "youtube" and d.get("article_id"):
-        return f"https://i.ytimg.com/vi/{d['article_id']}/hqdefault.jpg"
+        return best_youtube_still(str(d["article_id"]))
     url = (d.get("url") or "").strip()
     if not url.startswith(("http://", "https://")):
         return None
     if url not in og_cache:
         og_cache[url] = fetch_og_or_twitter_image(url)
-        got = og_cache[url]
-        if got:
+        got_new = og_cache[url]
+        if got_new:
             logger.info(
                 "Resolved thumbnail via OG for %s",
                 url[:120] + ("…" if len(url) > 120 else ""),
             )
         else:
             logger.debug("No OG thumbnail for digest %s", d.get("id"))
-    return og_cache[url]
+    cached = og_cache.get(url)
+    if cached:
+        return sharpen_public_thumbnail_url(cached) or cached
+    return None
 
 
 def generate_email_digest(hours: int = 24, top_n: int = 10) -> EmailDigestResponse:
@@ -64,6 +71,13 @@ def generate_email_digest(hours: int = 24, top_n: int = 10) -> EmailDigestRespon
 
     logger.info(f"Generating email digest with top {top_n} articles")
 
+    from app.topic_packs.diversify import diversify_curated_pick
+
+    digest_map = {d["id"]: d for d in digests}
+    topic_sel = set(USER_PROFILE.get("topics") or [])
+    picked = diversify_curated_pick(ranked_articles, digest_map, topic_sel, top_n)
+    reranked = [a.model_copy(update={"rank": idx}) for idx, a in enumerate(picked, start=1)]
+
     og_cache: dict = {}
     article_details = [
         RankedArticleDetail(
@@ -82,7 +96,7 @@ def generate_email_digest(hours: int = 24, top_n: int = 10) -> EmailDigestRespon
                 og_cache,
             ),
         )
-        for a in ranked_articles
+        for a in reranked
     ]
 
     email_digest = email_agent.create_email_digest_response(

@@ -4,6 +4,10 @@ import { SignIn } from "@clerk/nextjs";
 export default function Page() {
   return (
     <div className="relative z-10 min-h-dvh flex flex-col items-center justify-center px-4 py-16 bg-surface-deep text-ink overflow-x-hidden">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <span className="briefing-auth-orb briefing-auth-a" aria-hidden />
+        <span className="briefing-auth-orb briefing-auth-b" aria-hidden />
+      </div>
       <div className="pointer-events-none absolute inset-0 helix-aurora opacity-[0.42]" aria-hidden />
       <div className="pointer-events-none absolute inset-0 helix-grid opacity-[0.28]" aria-hidden />
       <Link

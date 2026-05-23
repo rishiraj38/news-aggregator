@@ -1,4 +1,7 @@
 from typing import List, Callable, Any
+
+from app.topic_packs.registry import RSS_TOPIC_FEED_SCRAPERS
+
 from .scrapers.youtube import YouTubeScraper, ChannelVideo
 from .scrapers.openai import OpenAIScraper
 from .scrapers.anthropic import AnthropicScraper
@@ -86,7 +89,26 @@ def _save_rss_articles(
     return articles
 
 
-SCRAPER_REGISTRY = [
+def _make_general_rss_save(source_key: str) -> Callable:
+    return lambda s, r, h: _save_rss_articles(
+        s,
+        r,
+        h,
+        lambda articles, sk=source_key: r.bulk_create_general_rss_articles(articles, sk),
+    )
+
+
+def _topic_pack_scraper_rows() -> List[tuple[str, Any, Callable]]:
+    from app.scrapers.configurable_rss import ConfigurableRSSScraper
+
+    rows: List[tuple[str, Any, Callable]] = []
+    for pack in RSS_TOPIC_FEED_SCRAPERS:
+        scraper = ConfigurableRSSScraper(pack["rss_urls"])
+        rows.append((pack["registry_name"], scraper, _make_general_rss_save(pack["source_key"])))
+    return rows
+
+
+_SCRAPER_REGISTRY_CORE: List[tuple[str, Any, Callable]] = [
     ("youtube", YouTubeScraper(), _save_youtube_videos),
     (
         "openai",
@@ -101,18 +123,17 @@ SCRAPER_REGISTRY = [
     (
         "techcrunch",
         TechCrunchScraper(),
-        lambda s, r, h: _save_rss_articles(
-            s, r, h, lambda a: r.bulk_create_general_rss_articles(a, "techcrunch")
-        ),
+        _make_general_rss_save("techcrunch"),
     ),
     (
         "theverge",
         TheVergeScraper(),
-        lambda s, r, h: _save_rss_articles(
-            s, r, h, lambda a: r.bulk_create_general_rss_articles(a, "theverge")
-        ),
+        _make_general_rss_save("theverge"),
     ),
 ]
+
+
+SCRAPER_REGISTRY = _SCRAPER_REGISTRY_CORE + _topic_pack_scraper_rows()
 
 
 def run_scrapers(hours: int = 24) -> dict:
