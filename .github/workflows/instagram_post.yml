@@ -10,9 +10,9 @@ name: Instagram post
 
 on:
   workflow_dispatch: {}
-  # Optional: uncomment and pick a cron after your digest scrape if you want a daily IG post from CI.
-  # schedule:
-  #   - cron: "0 11 * * *"
+  # Daily, ~30min after Daily AI Digest (10:30 UTC) so the DB usually has fresh digests.
+  schedule:
+    - cron: "0 11 * * *"
 
 jobs:
   instagram-post:
