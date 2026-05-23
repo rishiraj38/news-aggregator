@@ -72,7 +72,12 @@ Preferences:
 
 {digest_list}
 
-Provide a relevance score (0.0-10.0) and rank (1-{len(digests)}) for each article, ordered from most to least relevant.
+Provide a relevance score (0.0-10.0) and rank (1-{len(digests)}) for each article.
+
+CRITICAL rules:
+• For every object, set `"digest_id"` to the EXACT string shown on the `ID:` line for that digest (character-for-character, including colons).
+• Include every digest exactly once — do not invent, merge, shorten, or reformat ids.
+• In the `"articles"` array, list entries in ascending `"rank"` (rank 1 first, then rank 2, …).
 
 Output strictly valid JSON matching this schema:
 {{

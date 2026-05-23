@@ -333,6 +333,59 @@ def _detail_from_summary(summary: str, title: str, max_chars: int = 320) -> str:
     return s[:max_chars].rstrip() + ("…" if len(s) > max_chars else "")
 
 
+def _normalize_curator_digest_id(raw: object) -> str:
+    """Strip common LLM noise (quotes/spaces) from digest ids for lookup."""
+    s = "" if raw is None else str(raw).strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'”“":
+        s = s[1:-1].strip()
+    return s
+
+
+def _digest_from_curator_pick(digests: list[dict], ranked_articles: list) -> dict:
+    """
+    Map curator ranked output to one digest dict. Groq ordering is unreliable, so sort by rank.
+    Tolerates minor id mismatches; falls back to newest digest (`digests` is created_at DESC).
+    """
+    by_exact = {str(d["id"]).strip(): d for d in digests}
+    collapsed = {"".join(str(d["id"]).split()): d for d in digests}
+
+    def sort_key(art: object):
+        rank = getattr(art, "rank", 999)
+        score = getattr(art, "relevance_score", 0.0)
+        try:
+            r_val = int(rank)
+        except (TypeError, ValueError):
+            r_val = 999
+        try:
+            sc = float(score)
+        except (TypeError, ValueError):
+            sc = 0.0
+        return (r_val, -sc)
+
+    for art in sorted(ranked_articles, key=sort_key):
+        nid = _normalize_curator_digest_id(getattr(art, "digest_id", None))
+        if not nid:
+            continue
+        if nid in by_exact:
+            return by_exact[nid]
+        snug = "".join(nid.split())
+        if snug in collapsed:
+            logger.warning(
+                "Curator digest_id matched after collapsing whitespace (%r)",
+                getattr(art, "digest_id", None),
+            )
+            return collapsed[snug]
+
+    top_pick = getattr(ranked_articles[0], "digest_id", None) if ranked_articles else None
+    logger.warning(
+        "Curator digest_id did not match any row (example top pick=%r). "
+        "Valid ids (sample): %s. Using newest digest in window.",
+        top_pick,
+        list(by_exact.keys())[:6],
+    )
+    return digests[0]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Breaking-news style Instagram card + optional publish")
     ap.add_argument("--email", default=DEFAULT_USER, help="User for curator profile (must exist in DB)")
@@ -400,11 +453,7 @@ def main() -> int:
         logger.error("Curator returned empty.")
         return 1
 
-    top_digest_id = ranked[0].digest_id
-    d = next((x for x in digests if x["id"] == top_digest_id), None)
-    if not d:
-        logger.error("Digest row missing.")
-        return 1
+    d = _digest_from_curator_pick(digests, ranked)
 
     og_cache: dict = {}
     thumb_url = _resolve_thumbnail_for_digest(d, og_cache)
