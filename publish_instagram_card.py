@@ -17,8 +17,8 @@ Env (optional publishing)
   INSTAGRAM_BUSINESS_ID           Numeric IG Business/Creator ID
   META_GRAPH_MEDIA_BASE           Default facebook Graph; instagram login → https://graph.instagram.com/v21.0
 
-  META_PUBLIC_IMAGE_UPLOAD        auto (default chain: catbox, 0x0.st, file.io, transfer.sh) + Imgur fallback if set
-  META_PUBLIC_IMAGE_UPLOAD_ORDER  Comma-separated override of that chain
+  META_PUBLIC_IMAGE_UPLOAD        auto (Cloudinary prepended if CLOUDINARY_* set; else catbox→0x0→file.io→transfer.sh) + Imgur if set
+  META_PUBLIC_IMAGE_UPLOAD_ORDER  Comma-separated override (omit Cloudinary prepend when this is set)
   META_SKIP_FACEBOOK_PAGE_STAGING  true skips unpublished Page-photo step on facebook.com Graph only
 
   META_FACEBOOK_PAGE_ID           Optional FB Page for Page-photo staging (needs facebook-capable token)
@@ -28,6 +28,8 @@ Env (optional publishing)
 
   NEWS_GRAPHIC_TICKER             Red bar ticker (default: BREAKING NEWS)
   HELIX_LOGO_PATH                 Optional PNG corner logo
+  CLOUDINARY_CLOUD_NAME           Unsigned upload preset (recommended for CI; see `.env.example`)
+  CLOUDINARY_UPLOAD_PRESET        Dashboard → Upload → Unsigned uploading
 
 Usage
 -----
@@ -137,13 +139,14 @@ def test_public_image_upload(jpeg_override: str) -> int:
 
 Public-upload troubleshooting
 -----------------------------
-META_PUBLIC_IMAGE_UPLOAD=auto tries several third-party mirrors (Catbox → 0x0.st → file.io → transfer.sh).
+META_PUBLIC_IMAGE_UPLOAD=auto uses Cloudinary first when CLOUDINARY_CLOUD_NAME + CLOUDINARY_UPLOAD_PRESET are set;
+otherwise anon mirrors (Catbox → 0x0.st → file.io → transfer.sh).
 
-• All blocked or down: temporarily upload the JPEG to your own CDN / S3 / static host and set
-  INSTAGRAM_SOURCE_IMAGE_URL to the direct HTTPS .jpg URL.
-• Re-order hosts: META_PUBLIC_IMAGE_UPLOAD_ORDER=catbox,file_io,transfer_sh,zero_x_zero
-• Pin one: META_PUBLIC_IMAGE_UPLOAD=catbox
-• Imgur fallback: META_PUBLIC_IMAGE_UPLOAD=auto + IMGUR_CLIENT_ID adds Imgur last.
+• GitHub Actions: add Cloudinary secrets (unsigned preset — no upload API secret).
+• All mirrors blocked: set INSTAGRAM_SOURCE_IMAGE_URL to a direct HTTPS .jpg URL.
+• Re-order: META_PUBLIC_IMAGE_UPLOAD_ORDER=cloudinary,catbox,file_io,transfer_sh,zero_x_zero
+• Pin Cloudinary only: META_PUBLIC_IMAGE_UPLOAD=cloudinary
+• Imgur last: META_PUBLIC_IMAGE_UPLOAD=auto + IMGUR_CLIENT_ID (after other backends).
 """
 .strip()
         )

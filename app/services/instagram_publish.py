@@ -10,12 +10,10 @@ Requirements (Meta):
 We do NOT support password-based automation (unsupported and unsafe).
 
 Publishing needs a PUBLICLY REACHABLE HTTPS image URL for the photo step. Options:
-- **Default anonymous hosts** (`META_PUBLIC_IMAGE_UPLOAD=auto`): tries catbox.moe, then 0x0.st,
-  transfer.sh (and optional Imgur via `META_PUBLIC_IMAGE_UPLOAD_ORDER`). No Imgur account required.
-- IMGUR_CLIENT_ID: optional Imgur uploads if you pin `imgur` in the order above.
-- On **graph.facebook.com** we first try an unpublished Page photo (`META_FACEBOOK_PAGE_ID` or discover).
-
-- INSTAGRAM_SOURCE_IMAGE_URL: bypass — your own HTTPS JPEG URL (CDN, Supabase static, signed URL, …).
+- **Cloudinary unsigned upload** (`CLOUDINARY_CLOUD_NAME` + `CLOUDINARY_UPLOAD_PRESET`) — reliable on GitHub Actions
+  vs bot-blocked anon hosts (catbox, 0x0, transfer.sh …).
+- **Default anonymous hosts** (`META_PUBLIC_IMAGE_UPLOAD=auto`): fallback chain including catbox / 0x0 / file_io / transfer.sh.
+- IMGUR_CLIENT_ID optional; **INSTAGRAM_SOURCE_IMAGE_URL** bypass (your CDN URL).
 
 - META_GRAPH_MEDIA_BASE: IG media/create/publish host. Use `https://graph.instagram.com/v21.0`
   for Instagram Business Login (“Generate token” in IG API setup). Default is facebook.com Graph.
@@ -24,7 +22,9 @@ Env (highlights):
   META_ACCESS_TOKEN           Instagram / Page token depending on META_GRAPH_MEDIA_BASE
   INSTAGRAM_BUSINESS_ID
   META_GRAPH_MEDIA_BASE       optional instagram.com vs facebook.com
-  META_PUBLIC_IMAGE_UPLOAD    auto | catbox | 0x0 | transfer_sh | file_io | imgur (comma list also ok)
+  CLOUDINARY_CLOUD_NAME       unsigned upload preset (recommended for CI)
+  CLOUDINARY_UPLOAD_PRESET
+  META_PUBLIC_IMAGE_UPLOAD    auto | backend name(s); auto prepends Cloudinary when CLOUDINARY_* set
   META_PUBLIC_IMAGE_UPLOAD_ORDER   override auto-order, e.g. catbox,file_io,0x0
   META_SKIP_FACEBOOK_PAGE_STAGING  true→ skip FB Page unpublished-photo step
   META_FACEBOOK_PAGE_ID
@@ -138,7 +138,7 @@ def facebook_unpublished_photo_public_url(page_id: str, access_token: str, jpeg_
     raise RuntimeError(f"Facebook photo missing public image URL fields: {info}")
 
 
-# --- Anonymous public hosts so Meta can `image_url`-fetch our JPEG ---
+# --- Public hosts Meta can curl for JPEG (CI often blocks flaky anon mirrors) ---
 _DEFAULT_PUBLIC_UPLOAD_ORDER = ("catbox", "zero_x_zero", "file_io", "transfer_sh")
 
 
@@ -242,6 +242,33 @@ def _file_io_upload_jpeg(path: Path) -> str:
     return _https_url(link)
 
 
+def _cloudinary_upload_jpeg(path: Path, *, cloud_name: str, upload_preset: str) -> str:
+    """HTTPS URL via Cloudinary unsigned upload preset (Dashboard → Upload → Unsigned uploading)."""
+    rb = path.read_bytes()
+    if not rb:
+        raise ValueError(f"Empty file {path}")
+    endpoint = f"https://api.cloudinary.com/v1_1/{cloud_name.strip()}/image/upload"
+    r = requests.post(
+        endpoint,
+        files={"file": (path.name or "card.jpg", rb, "image/jpeg")},
+        data={"upload_preset": upload_preset.strip()},
+        timeout=240,
+    )
+    try:
+        j: dict[str, Any] = r.json()
+    except Exception:
+        raise RuntimeError(f"cloudinary JSON parse ({r.status_code}) {r.text[:400]}") from None
+
+    if r.status_code >= 400 or ("error" in j and isinstance(j.get("error"), dict)):
+        raise RuntimeError(f"cloudinary rejected ({r.status_code}): {j}")
+    secure = j.get("secure_url")
+    url_plain = j.get("url") if isinstance(j.get("url"), str) else None
+    picked = secure if isinstance(secure, str) else url_plain
+    if not isinstance(picked, str) or not picked.startswith("http"):
+        raise RuntimeError(f"cloudinary missing URL ({r.status_code}): {j}")
+    return _https_url(picked)
+
+
 def upload_local_jpeg_to_public_https(path: Path, *, imgur_client_id: str | None) -> str:
     """Upload JPEG to anonymous host(s); Meta downloads this URL during container creation."""
 
@@ -258,6 +285,10 @@ def upload_local_jpeg_to_public_https(path: Path, *, imgur_client_id: str | None
         backends = [_canonical_backend(p) for p in mode_raw.split(",") if p.strip()]
     elif mode_lower == "auto":
         backends = list(explicit_order_cfg or list(_DEFAULT_PUBLIC_UPLOAD_ORDER))
+        cn = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
+        pr = os.getenv("CLOUDINARY_UPLOAD_PRESET", "").strip()
+        if cn and pr and not explicit_order_cfg:
+            backends.insert(0, "cloudinary")
         if (
             imgur_client_id
             and _normalize_imgur_client_id(imgur_client_id)
@@ -284,6 +315,19 @@ def upload_local_jpeg_to_public_https(path: Path, *, imgur_client_id: str | None
     }
 
     for name in backends:
+        if name == "cloudinary":
+            cn = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
+            pr = os.getenv("CLOUDINARY_UPLOAD_PRESET", "").strip()
+            if not cn or not pr:
+                errors.append("cloudinary skipped — set CLOUDINARY_CLOUD_NAME and CLOUDINARY_UPLOAD_PRESET")
+                continue
+            try:
+                url = _cloudinary_upload_jpeg(path, cloud_name=cn, upload_preset=pr)
+                logger.info("Public image URL via cloudinary")
+                return url
+            except Exception as exc:
+                errors.append(f"cloudinary: {exc}")
+                continue
         if name == "imgur":
             cid_ok = imgur_client_id and _normalize_imgur_client_id(imgur_client_id)
             if not cid_ok:
@@ -310,7 +354,9 @@ def upload_local_jpeg_to_public_https(path: Path, *, imgur_client_id: str | None
 
     raise RuntimeError(
         "Uploaded JPEG nowhere — all hosts failed. "
-        + "Either fix network or set INSTAGRAM_SOURCE_IMAGE_URL to your HTTPS JPEG.\nDetails: "
+        + "For GitHub Actions use Cloudinary unsigned upload (CLOUDINARY_CLOUD_NAME, "
+        + "CLOUDINARY_UPLOAD_PRESET), fix network, or set INSTAGRAM_SOURCE_IMAGE_URL to an HTTPS JPEG.\n"
+        + "Details: "
         + " | ".join(errors)
     )
 
