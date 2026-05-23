@@ -1,5 +1,10 @@
 # Build the top-ranked digest card and publish to Instagram (Instagram Graph API).
 # Does not send digest email — keep this separate from `daily_digest.yml`.
+#
+# JPEG staging on runners: anonymous hosts (Catbox, 0x0.st, file.io, transfer.sh) are usually blocked or down.
+# This workflow defaults META_PUBLIC_IMAGE_UPLOAD=cloudinary. Add Secrets:
+#   CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET (Dashboard → Unsigned upload preset).
+# Or set Secret INSTAGRAM_SOURCE_IMAGE_URL; or Repository variable META_PUBLIC_IMAGE_UPLOAD / IMGUR_* if you insist.
 
 name: Instagram post
 
@@ -52,4 +57,5 @@ jobs:
         run: |
           set -e
           EMAIL="${INSTAGRAM_CURATOR_EMAIL:-rishiraj438gt@gmail.com}"
+          export META_PUBLIC_IMAGE_UPLOAD="${META_PUBLIC_IMAGE_UPLOAD:-cloudinary}"
           python publish_instagram_card.py --publish --email "$EMAIL"

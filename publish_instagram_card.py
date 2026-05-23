@@ -444,11 +444,13 @@ def main() -> int:
         logger.error("META_ACCESS_TOKEN and INSTAGRAM_BUSINESS_ID are required for --publish.")
         return 1
 
-    # Image staging: unpublished FB Page upload (facebook Graph) then anon hosts unless bypass URL set.
+    # Image staging: unpublished FB Page upload (facebook Graph) then public uploads unless bypass URL set.
     if not bypass_url and not fb_page:
+        mode = (os.getenv("META_PUBLIC_IMAGE_UPLOAD", "auto") or "auto").strip()
         logger.info(
-            "No INSTAGRAM_SOURCE_IMAGE_URL — will upload JPEG via META_PUBLIC_IMAGE_UPLOAD "
-            "(default auto: catbox, 0x0.st, …) or unpublished Page photo when using facebook Graph + Page token."
+            "No INSTAGRAM_SOURCE_IMAGE_URL — will derive public JPEG URL "
+            "(META_PUBLIC_IMAGE_UPLOAD=%s; facebook Graph may use Page-photo staging instead).",
+            mode,
         )
 
     caption_lines = [
