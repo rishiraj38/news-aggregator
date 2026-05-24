@@ -1,19 +1,26 @@
 import logging
 import os
 import time
-from typing import List
+from typing import List, Sequence
 
+from openai import APIStatusError
 from pydantic import BaseModel, Field
+from tenacity import RetryError
 
 from .base import BaseAgent
 
 logger = logging.getLogger(__name__)
 
-# Groq on-demand tier can reject a single request whose token estimate exceeds TPM (~12k).
-# Chunking + truncation keeps each curator call small; cross-chunk scores merged by sorting.
-CURATOR_CHUNK_SIZE = max(1, int(os.getenv("CURATOR_CHUNK_SIZE", "10")))
-CURATOR_DIGEST_SUMMARY_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_SUMMARY_CHARS", "420")))
+# Groq on-demand tier TPM can reject a single giant completion; tune via env / split below.
+CURATOR_CHUNK_SIZE = max(1, int(os.getenv("CURATOR_CHUNK_SIZE", "6")))
+CURATOR_DIGEST_SUMMARY_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_SUMMARY_CHARS", "260")))
+CURATOR_DIGEST_TITLE_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_TITLE_CHARS", "200")))
 GROQ_CHUNK_SLEEP_SECONDS = float(os.getenv("GROQ_CHUNK_SLEEP_SECONDS", "10") or 0)
+
+CURATOR_MAX_INTEREST_LINES = max(10, int(os.getenv("CURATOR_MAX_INTEREST_LINES", "40")))
+CURATOR_INTEREST_LINE_CHARS = max(40, int(os.getenv("CURATOR_INTEREST_LINE_CHARS", "260")))
+CURATOR_PREF_TEXT_CHARS = max(200, int(os.getenv("CURATOR_PREF_TEXT_CHARS", "2800")))
+CURATOR_BACKGROUND_CHARS = max(40, int(os.getenv("CURATOR_BACKGROUND_CHARS", "520")))
 
 
 class RankedArticle(BaseModel):
@@ -60,11 +67,28 @@ Preferences / profile notes:
 """
 
 
-def _clip_summary(text: str, limit: int) -> str:
+def _clip(text: str, limit: int) -> str:
     t = (text or "").strip()
     if len(t) <= limit:
         return t
     return t[: limit - 1].rsplit(" ", 1)[0] + "…"
+
+
+def _clip_words(text: str, limit: int) -> str:
+    return _clip(text, limit)
+
+
+def _groq_prompt_tpm_reject(exc: BaseException) -> bool:
+    raw = str(exc).lower()
+    if isinstance(exc, APIStatusError) and getattr(exc, "status_code", None) == 413:
+        return True
+    if "reduce your message size" in raw:
+        return True
+    if "tokens per minute" in raw or " tpm " in raw:
+        return True
+    if "requested" in raw and ("12000" in raw or "tpm" in raw):
+        return True
+    return False
 
 
 class CuratorAgent(BaseAgent):
@@ -74,19 +98,43 @@ class CuratorAgent(BaseAgent):
         self.system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
-        interests = "\n".join(f"- {interest}" for interest in self.user_profile["interests"])
-        preferences = self.user_profile["preferences"]
-        pref_text = "\n".join(f"- {k}: {v}" for k, v in preferences.items())
+        raw_interests = self.user_profile.get("interests") or []
+        if not isinstance(raw_interests, list):
+            raw_interests = [str(raw_interests)] if raw_interests else []
+
+        clipped_lines = []
+        for line in raw_interests[:CURATOR_MAX_INTEREST_LINES]:
+            clipped_lines.append(
+                "- " + _clip_words(str(line), CURATOR_INTEREST_LINE_CHARS)
+            )
+        if len(raw_interests) > CURATOR_MAX_INTEREST_LINES:
+            clipped_lines.append(
+                f"- … (+{len(raw_interests) - CURATOR_MAX_INTEREST_LINES} more cues omitted)"
+            )
+        interests = "\n".join(clipped_lines) if clipped_lines else ""
+
+        preferences = self.user_profile.get("preferences") or {}
+        pref_text = ""
+        if isinstance(preferences, dict):
+            pref_text = "\n".join(f"- {k}: {v}" for k, v in preferences.items())
+
+        pref_text = _clip_words(pref_text, CURATOR_PREF_TEXT_CHARS) if pref_text else ""
+
         topics = "\n".join(
             f"- {lbl}" for lbl in self.user_profile.get("topic_labels") or []
+        )
+
+        name = _clip_words(str(self.user_profile.get("name") or ""), 120)
+        background = _clip_words(
+            str(self.user_profile.get("background") or ""), CURATOR_BACKGROUND_CHARS
         )
 
         return (
             CURATOR_PROMPT
             + USER_PROFILE_SECTION.format(
-                name=self.user_profile["name"],
-                background=self.user_profile["background"],
-                expertise_level=self.user_profile["expertise_level"],
+                name=name or "Subscriber",
+                background=background or "—",
+                expertise_level=str(self.user_profile.get("expertise_level") or ""),
                 topics=topics or "- General briefing",
                 interests=interests or "- Broad reader",
                 pref_text=pref_text or "(none)",
@@ -94,16 +142,13 @@ class CuratorAgent(BaseAgent):
         )
 
     def _format_digest_block(self, d: dict) -> str:
-        summ = _clip_summary(str(d.get("summary") or ""), CURATOR_DIGEST_SUMMARY_CHARS)
+        summ = _clip_words(str(d.get("summary") or ""), CURATOR_DIGEST_SUMMARY_CHARS)
+        tit = _clip_words(str(d.get("title") or "(untitled)"), CURATOR_DIGEST_TITLE_CHARS)
         return (
-            f"ID: {d['id']}\n"
-            f"Title: {d.get('title') or '(untitled)'}\n"
-            f"Summary: {summ}\n"
-            f"Type: {d.get('article_type') or ''}"
+            f"ID: {d['id']}\nTitle: {tit}\nSummary: {summ}\nType: {d.get('article_type') or ''}"
         )
 
-    def _rank_digest_chunk(self, chunk: List[dict]) -> List[RankedArticle]:
-        """Single Groq call for up to CURATOR_CHUNK_SIZE digests."""
+    def _llm_rank_list(self, chunk: List[dict]) -> List[RankedArticle]:
         digest_list = "\n\n".join([self._format_digest_block(d) for d in chunk])
         n = len(chunk)
 
@@ -143,8 +188,61 @@ Output strictly valid JSON matching this schema:
         )
 
         content = response.choices[0].message.content
-        ranked_list = RankedDigestList.model_validate_json(content)
+        ranked_list = RankedDigestList.model_validate_json(content or "{}")
         return ranked_list.articles
+
+    def _rank_digest_recursive(self, chunk: List[dict]) -> List[RankedArticle]:
+        """Groq ranks `chunk`; on TPM/size rejection split in half."""
+        try:
+            return self._llm_rank_list(chunk)
+        except APIStatusError as e:
+            if not _groq_prompt_tpm_reject(e) or len(chunk) <= 1:
+                raise
+            mid = len(chunk) // 2 or 1
+            logger.warning(
+                "Groq TPM / oversize for batch of %s digests → split %s | %s: %s",
+                len(chunk),
+                mid,
+                len(chunk) - mid,
+                str(e).replace("\n", " ")[:220],
+            )
+            idle = (
+                float(GROQ_CHUNK_SLEEP_SECONDS) / 2.0
+                if GROQ_CHUNK_SLEEP_SECONDS > 0
+                else 2.0
+            )
+            time.sleep(min(30.0, idle))
+            left = self._rank_digest_recursive(chunk[:mid])
+            right = self._rank_digest_recursive(chunk[mid:])
+            return [*left, *right]
+        except RetryError as re:
+            le = None
+            try:
+                att = getattr(re, "last_attempt", None)
+                le = att.exception() if att is not None else None  # type: ignore[union-attr]
+            except Exception:  # noqa: BLE001
+                le = None
+            if le and _groq_prompt_tpm_reject(le) and len(chunk) > 1:
+                mid = len(chunk) // 2 or 1
+                logger.warning("Curator TPM pattern inside RetryError; splitting batch.")
+                idle = (
+                    float(GROQ_CHUNK_SLEEP_SECONDS) / 2.0
+                    if GROQ_CHUNK_SLEEP_SECONDS > 0
+                    else 2.0
+                )
+                time.sleep(min(30.0, idle))
+                left = self._rank_digest_recursive(chunk[:mid])
+                right = self._rank_digest_recursive(chunk[mid:])
+                return [*left, *right]
+            raise re
+        except Exception as e:
+            if _groq_prompt_tpm_reject(e) and len(chunk) > 1:
+                mid = len(chunk) // 2 or 1
+                logger.warning("Curator split after non-typed TPM error: %s", type(e).__name__)
+                left = self._rank_digest_recursive(chunk[:mid])
+                right = self._rank_digest_recursive(chunk[mid:])
+                return [*left, *right]
+            raise
 
     def rank_digests(self, digests: List[dict]) -> List[RankedArticle]:
         if not digests:
@@ -156,19 +254,19 @@ Output strictly valid JSON matching this schema:
             for i in range(0, len(digests), CURATOR_CHUNK_SIZE)
         ]
 
-        if len(chunks) > 1:
+        if len(chunks) > 1 or len(digests) > CURATOR_CHUNK_SIZE:
             logger.info(
-                "Curator chunking: %s digests → %s Groq requests (≤%s items each)",
+                "Curator batches: %s digests → %s primary Groq batches (≤%s items)",
                 len(digests),
                 len(chunks),
                 CURATOR_CHUNK_SIZE,
             )
 
-        per_chunk: List[RankedArticle] = []
+        per_piece: List[RankedArticle] = []
         for ci, chunk in enumerate(chunks):
             try:
-                part = self._rank_digest_chunk(chunk)
-                per_chunk.extend(self._finalize_chunk_results(part, chunk))
+                raw = self._rank_digest_recursive(chunk)
+                per_piece.extend(self._finalize_chunk_results(raw, chunk))
             except Exception as e:
                 logger.error(
                     "Curator chunk %s/%s failed: %s", ci + 1, len(chunks), e, exc_info=True
@@ -177,22 +275,21 @@ Output strictly valid JSON matching this schema:
 
             if ci + 1 < len(chunks) and GROQ_CHUNK_SLEEP_SECONDS > 0:
                 logger.info(
-                    "Sleeping %.1fs between curator chunks (Groq TPM / RPM pacing)",
+                    "Sleeping %.1fs between curator batches",
                     GROQ_CHUNK_SLEEP_SECONDS,
                 )
                 time.sleep(GROQ_CHUNK_SLEEP_SECONDS)
 
         merged = sorted(
-            per_chunk,
+            per_piece,
             key=lambda a: (-float(a.relevance_score), order_ix[a.digest_id]),
         )
         return [a.model_copy(update={"rank": i + 1}) for i, a in enumerate(merged)]
 
     @staticmethod
     def _finalize_chunk_results(
-        articles: List[RankedArticle], chunk: List[dict]
+        articles: Sequence[RankedArticle], chunk: List[dict]
     ) -> List[RankedArticle]:
-        """Ensure each digest appears once before global merge."""
         expected = {d["id"] for d in chunk}
         by_id = {a.digest_id: a for a in articles}
         for did in expected - by_id.keys():
@@ -205,6 +302,4 @@ Output strictly valid JSON matching this schema:
                 rank=999,
                 reasoning="Included automatically — model omitted this item from JSON.",
             )
-        # Drop extra IDs hallucinated outside this chunk if any (should not happen)
-        out = [by_id[did] for did in [d["id"] for d in chunk] if did in by_id]
-        return out
+        return [by_id[did] for did in [d["id"] for d in chunk] if did in by_id]

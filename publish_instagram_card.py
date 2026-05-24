@@ -389,7 +389,12 @@ def _digest_from_curator_pick(digests: list[dict], ranked_articles: list) -> dic
 def main() -> int:
     ap = argparse.ArgumentParser(description="Breaking-news style Instagram card + optional publish")
     ap.add_argument("--email", default=DEFAULT_USER, help="User for curator profile (must exist in DB)")
-    ap.add_argument("--hours", type=int, default=168, help="Digest lookback window")
+    ap.add_argument(
+        "--hours",
+        type=int,
+        default=72,
+        help="Digest lookback window (keep modest — Groq curator pays per-token on the stacked prompt)",
+    )
     ap.add_argument("--dry-run", action="store_true", help="Only write JPEG; skip Meta/third-party uploads")
     ap.add_argument("--publish", action="store_true", help="Publish via Instagram Graph (needs env tokens)")
     ap.add_argument("--main", type=str, default="", help="Override red headline")
@@ -446,6 +451,15 @@ def main() -> int:
     if not digests:
         logger.error("No digests.")
         return 1
+
+    cap = max(12, min(240, int(os.getenv("INSTAGRAM_CURATOR_DIGEST_CAP", "40"))))
+    if len(digests) > cap:
+        logger.info(
+            "Instagram curator: trimming %s digests → newest %s (env INSTAGRAM_CURATOR_DIGEST_CAP)",
+            len(digests),
+            cap,
+        )
+        digests = digests[:cap]
 
     profile = user_svc.get_user_profile(user)
     ranked = CuratorAgent(profile).rank_digests(digests)

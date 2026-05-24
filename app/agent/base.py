@@ -4,17 +4,42 @@ import time
 from abc import ABC
 
 from dotenv import load_dotenv
-from openai import OpenAI, RateLimitError, APIError, APIStatusError
+from openai import (
+    OpenAI,
+    RateLimitError,
+    APIError,
+    APIStatusError,
+    APIConnectionError,
+)
 from tenacity import (
     retry,
     stop_after_attempt,
     wait_exponential,
-    retry_if_exception_type,
+    retry_if_exception,
     before_sleep_log,
 )
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+
+def _groq_transient_retry(exc: BaseException) -> bool:
+    """
+    Do not retry TPM / oversized (413), client quota (429), or other 4xx with the SAME payload.
+
+    Retry only infra-style failures where the identical request might succeed later.
+    """
+    if isinstance(exc, RateLimitError):
+        return False
+    if isinstance(exc, APIStatusError):
+        if exc.status_code == 413:
+            return False
+        if exc.status_code == 429:
+            return False
+        if 400 <= exc.status_code < 500:
+            return False
+        return exc.status_code >= 500 or exc.status_code == 408
+    return isinstance(exc, APIConnectionError)
 
 
 class BaseAgent(ABC):
@@ -54,7 +79,7 @@ class BaseAgent(ABC):
         return False
 
     @retry(
-        retry=retry_if_exception_type(APIError),
+        retry=retry_if_exception(_groq_transient_retry),
         wait=wait_exponential(multiplier=1, min=4, max=60),
         stop=stop_after_attempt(5),
         before_sleep=before_sleep_log(logger, logging.WARNING),
@@ -63,8 +88,8 @@ class BaseAgent(ABC):
         """
         chat.completions.create with key rotation on RPM-style 429.
 
-        TPM / oversized prompts (Groq sometimes returns HTTP 413) must be avoided
-        by callers (Curator batches + truncates) — swapping keys cannot shrink the body.
+        TPM oversize returns HTTP 413 from Groq with the SAME token estimate —
+        swapping keys cannot shrink messages; callers must split/truncate prompts.
         """
         try:
             return self.client.chat.completions.create(
@@ -86,7 +111,6 @@ class BaseAgent(ABC):
             logger.error("Rate limit reached and no other keys available.")
             raise e
         except APIStatusError as e:
-            # Fallback for 429s that aren't typed as RateLimitError (upstream quirks).
             if e.status_code == 429 and self._rotate_key():
                 pause = float(os.getenv("GROQ_AFTER_KEY_ROTATE_SLEEP", "2") or 0)
                 if pause > 0:
