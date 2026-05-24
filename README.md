@@ -82,6 +82,10 @@ This project implements a sophisticated daily data pipeline that scrapes multi-m
 This project is designed to run as a **Daily Cron Job** on Render.com (Free Tier).
 See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for full instructions.
 
+## Interview prep & architecture
+
+For how the ingestion → digest → curator → email/dashboard flow works, diagrams, tradeoffs, and **interview Q&A prompts**, see **[docs/INTERVIEW_AND_ARCHITECTURE.md](docs/INTERVIEW_AND_ARCHITECTURE.md)**.
+
 ## 📄 License
 
 MIT
