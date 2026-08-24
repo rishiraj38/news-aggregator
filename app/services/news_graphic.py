@@ -107,21 +107,30 @@ def _paste_photo_blur_fill_then_contain(canvas: Image.Image, photo: Image.Image)
     Full image visible: blurred cover fills the canvas (no harsh letterboxing),
     sharp image centered in contain-mode on top.
 
-    Sharpening is applied to the foreground to counteract softness from
-    upscaling small thumbnails (the original blurriness issue).
+    For very small source images (< 500px), the blurred cover looks like
+    pixel soup, so we use a clean dark gradient instead.
     """
-    # Blurred background fills edge-to-edge (no black bars)
-    bg = fit_cover_crop_top(photo, CANVAS_W, CANVAS_H)
-    bg = bg.filter(ImageFilter.GaussianBlur(radius=28))
-    canvas.paste(bg.convert("RGB"), (0, 0))
+    pw, ph = photo.size
+    is_tiny = pw < 500 or ph < 400  # e.g., 240px BBC RSS thumbnails
+
+    if is_tiny:
+        # Clean dark background — much better than a blurry thumbnail
+        canvas.paste((18, 18, 28), (0, 0, CANVAS_W, CANVAS_H))
+    else:
+        # Blurred background fills edge-to-edge (no black bars)
+        bg = fit_cover_crop_top(photo, CANVAS_W, CANVAS_H)
+        blur_radius = 18 if pw >= 800 else 24
+        bg = bg.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        canvas.paste(bg.convert("RGB"), (0, 0))
 
     # Sharp foreground shows the full image
     fg, ox, oy = fit_contain_rgba(photo, CANVAS_W, CANVAS_H)
-    # Sharpen upscaled small images to prevent blurriness
-    if photo.size[0] < CANVAS_W or photo.size[1] < CANVAS_H:
-        fg = fg.filter(ImageFilter.UnsharpMask(radius=2.0, percent=100, threshold=2))
+    # Sharpen upscaled images to prevent blurriness
+    if pw < CANVAS_W or ph < CANVAS_H:
+        sharpness_factor = 1.6 if is_tiny else 1.3
+        fg = fg.filter(ImageFilter.UnsharpMask(radius=2.5, percent=120, threshold=2))
         enhancer = ImageEnhance.Sharpness(fg)
-        fg = enhancer.enhance(1.3)
+        fg = enhancer.enhance(sharpness_factor)
     canvas.paste(fg, (ox, oy), fg)
 
 

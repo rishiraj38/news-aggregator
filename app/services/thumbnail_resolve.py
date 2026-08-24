@@ -50,21 +50,42 @@ def sharpen_public_thumbnail_url(url: Optional[str]) -> Optional[str]:
     m = _YOUTUBE_IMG_RE.search(url.strip())
     if m:
         return best_youtube_still(m.group(1))
-    if "ichef.bbci.co.uk" in url and "?" in url:
+    if "ichef.bbci.co.uk" in url:
         return _bbc_ichef_widen(url)
     return url
 
 
+_BBC_PATH_WIDTH_RE = re.compile(
+    r"(ichef\.bbci\.co\.uk/(?:news|ace|images|live)(?:/standard)?/?)(\d{2,4})(/)",
+    re.I,
+)
+
+
 def _bbc_ichef_widen(url: str) -> str:
-    """When BBC ichef URLs carry a pixel width hint, bump it for sharper email previews."""
+    """Bump BBC ichef thumbnail width for sharper Instagram cards.
+
+    Handles both forms:
+      - Query param: ?width=240 → ?width=1024
+      - Path segment: /news/240/cpsprodpb/… → /news/1024/cpsprodpb/…
+    """
+    TARGET_W = "1024"
+
+    # Path-based width (most common for BBC RSS thumbnails)
+    m = _BBC_PATH_WIDTH_RE.search(url)
+    if m and int(m.group(2)) < int(TARGET_W):
+        return url[: m.start(2)] + TARGET_W + url[m.end(2) :]
+
+    # Query-param width
     try:
         parsed = urlparse(url)
+        if not parsed.query:
+            return url
         q = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)]
         changed = False
         out_q: list[tuple[str, str]] = []
         for k, v in q:
-            if k.lower() in ("width", "w") and v.isdigit() and int(v) > 0 and int(v) < 976:
-                out_q.append((k, "976"))
+            if k.lower() in ("width", "w") and v.isdigit() and int(v) > 0 and int(v) < int(TARGET_W):
+                out_q.append((k, TARGET_W))
                 changed = True
             else:
                 out_q.append((k, v))
