@@ -324,12 +324,10 @@ class Repository:
         if existing:
             return None
 
-        if published_at:
-            if published_at.tzinfo is None:
-                published_at = published_at.replace(tzinfo=timezone.utc)
-            created_at = published_at
-        else:
-            created_at = datetime.now(timezone.utc)
+        # Always use current time for created_at so freshly-created digests
+        # are visible to get_recent_digests(hours=24). Previously published_at
+        # was used, which meant old articles' digests fell outside the window.
+        created_at = datetime.now(timezone.utc)
 
         digest = Digest(
             id=digest_id,
