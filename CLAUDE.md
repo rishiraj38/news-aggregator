@@ -39,7 +39,7 @@ main.py / app/daily_runner.py          ← Entry point (GitHub Actions cron)
 │
 ├─ [4/5] Digest generation ────────── app/services/process_digest.py
 │   └── DigestAgent (LLM)              → Groq: title + summary per article
-│       Capped by DIGEST_BATCH_LIMIT (default 100)
+│       Capped by DIGEST_BATCH_LIMIT (default 50)
 │
 └─ [5/5] Personalization & email ──── app/services/process_email.py
     ├── CuratorAgent (LLM)             → Ranks digests per-user profile
@@ -172,9 +172,11 @@ publish_instagram_card.py
 
 ### DigestAgent
 - Model: `openai/gpt-oss-120b`
+- **Topic-agnostic prompt**: handles tech, sports, politics, cricket — NOT AI-only
 - Input: article title + content (truncated to 8000 chars)
 - Output: `DigestOutput(title, summary)` via JSON mode
 - Called once per undigested article
+- ⚠️ If the prompt says "AI news analyst", the model will **refuse** non-AI articles with `json_validate_failed`
 
 ### CuratorAgent
 - Model: `openai/gpt-oss-120b`
@@ -215,12 +217,20 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 ### Thumbnail Resolution Chain (`app/services/thumbnail_resolve.py`)
 1. Stored `image_url` from scraper
 2. YouTube: tries `maxresdefault` → `sddefault` → `hqdefault` (skips tiny maxres)
-3. BBC ichef: bumps width param to 976px
+3. BBC ichef: auto-upgrades width to **1024px** in both URL forms:
+   - Path-based: `/news/240/cpsprodpb/...` → `/news/1024/cpsprodpb/...`
+   - Query-param: `?width=240` → `?width=1024`
+   - Covers patterns: `/news/`, `/ace/`, `/ace/standard/`, `/images/`, `/live/`
 4. OG/Twitter meta tags from article URL (cached per send)
 
 ### Instagram Card Rendering (`app/services/news_graphic.py`)
 - Canvas: 1080×1350 (portrait Instagram)
-- Full-bleed cover crop with UnsharpMask sharpening
+- **Hybrid layout**: blurred cover fills background + sharp full image centered (contain-mode)
+- Smart background by source size:
+  - **Tiny** (< 500px): clean dark solid `rgb(18, 18, 28)` — no blurry mess
+  - **Medium** (500–800px): blurred cover (radius 24)
+  - **Large** (800px+): gentle blur (radius 18)
+- UnsharpMask + ImageEnhance sharpening (1.6× for tiny, 1.3× for others)
 - Lower-third dark panel with red accent headline + white detail text
 - Helix AI logo (built-in or custom PNG)
 - Red ticker bar at bottom
@@ -242,7 +252,7 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `GROQ_API_KEY2` | – | Secondary key for rate-limit rotation |
-| `DIGEST_BATCH_LIMIT` | `100` | Max articles to digest per pipeline run |
+| `DIGEST_BATCH_LIMIT` | `50` | Max articles to digest per pipeline run |
 | `DIGEST_EMAIL_TEST_ONLY` | – | Restrict email to single address |
 | `CURATOR_CHUNK_SIZE` | `6` | Digests per Groq batch |
 | `GROQ_CHUNK_SLEEP_SECONDS` | `10` | Sleep between curator batches |
@@ -287,23 +297,31 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 
 1. **Model deprecation**: Groq retires models periodically. If you see `model_not_found`, query `GET https://api.groq.com/openai/v1/models` and update all 3 agents (`digest_agent.py`, `curator_agent.py`, `email_agent.py`).
 
-2. **YouTube scraping timeouts**: YouTube aggressively throttles. The scraper retries 10× per video with no timeout cap, which can stall the pipeline for 30+ minutes. Consider adding explicit timeouts.
+2. **DigestAgent prompt must be topic-agnostic**: The prompt handles tech, sports, politics, cricket. If it says "AI news analyst", the model refuses non-AI articles with `json_validate_failed` → `"I can only create digests for AI-related content"`. Always keep the prompt generic across all topics.
 
-3. **413 TPM errors from Groq**: The curator splits chunks on 413 but digest_agent doesn't. If single articles are too large, the 8000-char truncation in `digest_agent.py:31` is the safeguard.
+3. **Digest `created_at` must be current time**: `repository.py:create_digest()` must use `datetime.now(timezone.utc)` for `created_at`, NOT the article's `published_at`. Step 5 filters by `get_recent_digests(hours=24)` — if `created_at` matches a 3-day-old article, it falls outside the window → "No digests available to rank".
 
-4. **Boolean columns are strings**: `user.is_active` is `"true"` not `True`. Always compare with `str(...).lower() != "true"`.
+4. **YouTube scraping timeouts**: YouTube aggressively throttles. The scraper retries 10× per video with no timeout cap, which can stall the pipeline for 30+ minutes. Consider adding explicit timeouts.
 
-5. **No alembic migrations**: Schema changes use `schema_migrations.py` (additive ALTER TABLE only). New columns must handle NULL for existing rows.
+5. **413 TPM errors from Groq**: The curator splits chunks on 413 but digest_agent doesn't. If single articles are too large, the 8000-char truncation in `digest_agent.py:31` is the safeguard.
 
-6. **Env file loading order**: `app/.env` is loaded first, then root `.env`. Put secrets in `app/.env` locally.
+6. **Boolean columns are strings**: `user.is_active` is `"true"` not `True`. Always compare with `str(...).lower() != "true"`.
 
-7. **Digest IDs**: Format is `"{uuid}"`, but curator output sometimes includes quotes/whitespace. `_normalize_curator_digest_id()` in `publish_instagram_card.py` handles cleanup.
+7. **No alembic migrations**: Schema changes use `schema_migrations.py` (additive ALTER TABLE only). New columns must handle NULL for existing rows.
 
-8. **Topic filtering**: Unknown `article_type` values pass through `digest_matches_topics()` (returns True). This is intentional — prevents silently dropping articles after migrations.
+8. **Env file loading order**: `app/.env` is loaded first, then root `.env`. Put secrets in `app/.env` locally.
 
-9. **Image quality**: Instagram cards use full-bleed cover crop with `UnsharpMask` sharpening. Small source thumbnails get `ImageEnhance.Sharpness(1.4)` to compensate for upscaling.
+9. **Digest IDs**: Format is `"{article_type}:{article_id}"`, but curator output sometimes includes quotes/whitespace. `_normalize_curator_digest_id()` in `publish_instagram_card.py` handles cleanup.
 
-10. **Trial system**: 27-day trial with warnings at 2 days and 1 day remaining. Admins (`role="admin"`) are exempt. Expiration flags stored as string booleans.
+10. **Topic filtering**: Unknown `article_type` values pass through `digest_matches_topics()` (returns True). This is intentional — prevents silently dropping articles after migrations. Users with only `['technology']` topics will get 0 matches if the batch was all sports/politics — increase `DIGEST_BATCH_LIMIT` for topic diversity.
+
+11. **BBC thumbnail blurriness**: BBC RSS feeds serve thumbnails at 240px. `thumbnail_resolve.py` auto-upgrades to 1024px via path/query rewriting. If images still look blurry, check the source URL is hitting the `_BBC_PATH_WIDTH_RE` regex.
+
+12. **Meta access token expiration**: Instagram Graph API tokens expire when the user changes their Facebook password or Meta invalidates sessions. Error: `OAuthException code 190`. Fix: regenerate in Meta Developer Dashboard → Products → Instagram → API Setup → Generate token. Update `META_ACCESS_TOKEN` in GitHub Secrets.
+
+13. **Gmail App Password expiration**: SMTP error `535 5.7.8 Username and Password not accepted` means the `APP_PASSWORD` is invalid. Regenerate at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) and update GitHub Secret.
+
+14. **Trial system**: 27-day trial with warnings at 2 days and 1 day remaining. Admins (`role="admin"`) are exempt. Expiration flags stored as string booleans.
 
 ---
 
