@@ -72,7 +72,7 @@ Keep it concise (2-3 sentences for the introduction), friendly, and professional
 
 class EmailAgent(BaseAgent):
     def __init__(self, user_profile: dict):
-        super().__init__("llama-3.3-70b-versatile")
+        super().__init__("openai/gpt-oss-120b")
         self.user_profile = user_profile
 
     def generate_introduction(self, ranked_articles: List, *, is_first_delivery: bool = False) -> EmailIntroduction:

@@ -93,7 +93,7 @@ def _groq_prompt_tpm_reject(exc: BaseException) -> bool:
 
 class CuratorAgent(BaseAgent):
     def __init__(self, user_profile: dict):
-        super().__init__("llama-3.3-70b-versatile")
+        super().__init__("openai/gpt-oss-120b")
         self.user_profile = user_profile
         self.system_prompt = self._build_system_prompt()
 

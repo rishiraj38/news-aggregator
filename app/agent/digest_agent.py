@@ -21,7 +21,7 @@ class DigestOutput(BaseModel):
 
 class DigestAgent(BaseAgent):
     def __init__(self):
-        super().__init__("llama-3.3-70b-versatile")
+        super().__init__("openai/gpt-oss-120b")
         self.system_prompt = PROMPT
 
     def generate_digest(self, title: str, content: str, article_type: str) -> Optional[DigestOutput]:

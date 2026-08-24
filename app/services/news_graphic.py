@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional, Sequence, Tuple
 
 import requests
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageEnhance
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,10 @@ def fit_cover_crop_top(img: Image.Image, dest_w: int, dest_h: int) -> Image.Imag
     else:
         nh = int(w / dest_ratio)
         box = (0, 0, w, nh)
-    return img.crop(box).resize((dest_w, dest_h), Image.Resampling.LANCZOS)
+    cropped = img.crop(box).resize((dest_w, dest_h), Image.Resampling.LANCZOS)
+    # Sharpen after resize to counteract softness from upscaling small thumbnails
+    cropped = cropped.filter(ImageFilter.UnsharpMask(radius=1.8, percent=80, threshold=2))
+    return cropped
 
 
 def fit_contain_rgba(img: Image.Image, max_w: int, max_h: int) -> Tuple[Image.Image, int, int]:
@@ -101,13 +104,18 @@ def fit_contain_rgba(img: Image.Image, max_w: int, max_h: int) -> Tuple[Image.Im
 
 def _paste_photo_blur_fill_then_contain(canvas: Image.Image, photo: Image.Image) -> None:
     """
-    Full artwork visible: blurred cover fills the canvas (no harsh letterboxing), sharp image centered contain-mode.
+    Sharp full-bleed cover crop fills the canvas.
+
+    For small source images (< 1080 wide) we apply an additional
+    sharpening pass via ImageEnhance so upscaled thumbnails look
+    crisp instead of blurry on Instagram.
     """
-    bg = fit_cover_crop_top(photo, CANVAS_W, CANVAS_H)
-    bg = bg.filter(ImageFilter.GaussianBlur(radius=40))
-    canvas.paste(bg.convert("RGB"), (0, 0))
-    fg, ox, oy = fit_contain_rgba(photo, CANVAS_W, CANVAS_H)
-    canvas.paste(fg, (ox, oy), fg)
+    needs_extra_sharpen = photo.size[0] < CANVAS_W or photo.size[1] < CANVAS_H
+    fg = fit_cover_crop_top(photo, CANVAS_W, CANVAS_H)
+    if needs_extra_sharpen:
+        enhancer = ImageEnhance.Sharpness(fg)
+        fg = enhancer.enhance(1.4)
+    canvas.paste(fg.convert("RGB"), (0, 0))
 
 
 def _gradient_overlay(size: Tuple[int, int], start_alpha: int, end_alpha: int) -> Image.Image:
@@ -342,6 +350,6 @@ def render_breaking_news_card(spec: BreakingGraphicSpec, solid_fallback: Tuple[i
     return base_rgba.convert("RGB")
 
 
-def save_card(img: Image.Image, path: Path, quality: int = 93) -> None:
+def save_card(img: Image.Image, path: Path, quality: int = 97) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    img.save(path, format="JPEG", quality=quality, optimize=True)
+    img.save(path, format="JPEG", quality=quality, optimize=True, subsampling=0)
