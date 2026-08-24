@@ -127,7 +127,9 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         )
 
         log_progress("\n[4/5] Creating digests for articles...")
-        digest_result = process_digests()
+        digest_batch_limit = int(os.getenv("DIGEST_BATCH_LIMIT", "100") or 100)
+        logger.info("Digest batch limit: %s (set DIGEST_BATCH_LIMIT to override)", digest_batch_limit)
+        digest_result = process_digests(limit=digest_batch_limit)
         results["digests"] = digest_result
         logger.info(
             f"✓ Created {digest_result['processed']} digests "
