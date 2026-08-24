@@ -104,18 +104,25 @@ def fit_contain_rgba(img: Image.Image, max_w: int, max_h: int) -> Tuple[Image.Im
 
 def _paste_photo_blur_fill_then_contain(canvas: Image.Image, photo: Image.Image) -> None:
     """
-    Sharp full-bleed cover crop fills the canvas.
+    Full image visible: blurred cover fills the canvas (no harsh letterboxing),
+    sharp image centered in contain-mode on top.
 
-    For small source images (< 1080 wide) we apply an additional
-    sharpening pass via ImageEnhance so upscaled thumbnails look
-    crisp instead of blurry on Instagram.
+    Sharpening is applied to the foreground to counteract softness from
+    upscaling small thumbnails (the original blurriness issue).
     """
-    needs_extra_sharpen = photo.size[0] < CANVAS_W or photo.size[1] < CANVAS_H
-    fg = fit_cover_crop_top(photo, CANVAS_W, CANVAS_H)
-    if needs_extra_sharpen:
+    # Blurred background fills edge-to-edge (no black bars)
+    bg = fit_cover_crop_top(photo, CANVAS_W, CANVAS_H)
+    bg = bg.filter(ImageFilter.GaussianBlur(radius=28))
+    canvas.paste(bg.convert("RGB"), (0, 0))
+
+    # Sharp foreground shows the full image
+    fg, ox, oy = fit_contain_rgba(photo, CANVAS_W, CANVAS_H)
+    # Sharpen upscaled small images to prevent blurriness
+    if photo.size[0] < CANVAS_W or photo.size[1] < CANVAS_H:
+        fg = fg.filter(ImageFilter.UnsharpMask(radius=2.0, percent=100, threshold=2))
         enhancer = ImageEnhance.Sharpness(fg)
-        fg = enhancer.enhance(1.4)
-    canvas.paste(fg.convert("RGB"), (0, 0))
+        fg = enhancer.enhance(1.3)
+    canvas.paste(fg, (ox, oy), fg)
 
 
 def _gradient_overlay(size: Tuple[int, int], start_alpha: int, end_alpha: int) -> Image.Image:
