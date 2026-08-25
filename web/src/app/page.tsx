@@ -31,11 +31,11 @@ export default async function Home() {
         {/* Hero */}
         <section className="relative pt-[calc(5rem+env(safe-area-inset-top))] pb-20 sm:pb-28 px-4 sm:px-6 lg:px-8">
           <div
-            className="pointer-events-none absolute inset-x-0 top-0 h-[min(85vh,900px)] helix-aurora opacity-90"
+            className="pointer-events-none absolute inset-x-0 top-0 h-[min(85vh,900px)] helix-aurora opacity-70"
             aria-hidden
           />
           <div
-            className="pointer-events-none absolute inset-x-0 top-[4rem] h-[560px] helix-grid opacity-80"
+            className="pointer-events-none absolute inset-x-0 top-[4rem] h-[560px] helix-grid opacity-25"
             aria-hidden
           />
 
@@ -64,7 +64,7 @@ export default async function Home() {
               <p className="text-lg sm:text-[1.175rem] text-ink-muted leading-[1.7] max-w-2xl mb-10">
                 Helix ingests the technical wild, reads your curator profile once, then serves a
                 restrained morning dossier: what moved, why it echoes your backlog, where to drill
-                deeper when you&apos;re caffeinated—not when you&apos;re mid-deploy.
+                deeper when you&apos;re caffeinated - not when you&apos;re mid-deploy.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-11">
@@ -89,16 +89,16 @@ export default async function Home() {
                 </a>
               </div>
 
-              <div className="flex flex-wrap gap-5 text-[13px] text-ink-faint">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-3 text-[13px] text-ink-faint mb-8">
                 <span className="inline-flex items-center gap-2 border border-line px-3 py-1.5 rounded-lg bg-surface/50">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/90 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
                   Digest pipeline monitored
                 </span>
-                <span>Multi-source · Personalized · Email-first</span>
+                <span className="text-ink-muted">Multi-source · Personalized · Email-first</span>
               </div>
             </div>
 
-            <div className="mt-18 sm:mt-22 grid sm:grid-cols-3 gap-3 sm:gap-0 rounded-2xl overflow-hidden border border-line bg-surface-raised/30 backdrop-blur-md">
+            <div className="mt-20 sm:mt-28 grid sm:grid-cols-3 gap-3 sm:gap-0 rounded-2xl overflow-hidden border border-line bg-surface-raised/30 backdrop-blur-md">
               {[
                 { label: "Ingest breadth", value: "Feeds · video · repos", hint: "normalized nightly" },
                 { label: "Rank model", value: "Profile-aligned", hint: "score + curator reasoning" },
@@ -139,7 +139,7 @@ export default async function Home() {
                 </p>
               </div>
               <p className="text-sm text-ink-faint lg:text-right lg:max-w-[14rem] leading-relaxed border-l lg:border-l-0 lg:border-r border-line pl-5 lg:pl-0 lg:pr-6">
-                Truth lives in originals—Helix is the compass, not the substitute librarian.
+                Truth lives in originals - Helix is the compass, not the substitute librarian.
               </p>
             </div>
 
@@ -148,7 +148,7 @@ export default async function Home() {
                 {
                   icon: Radio,
                   title: "Ingest",
-                  body: "RSS and transcripts flattened into comparable signal—duplicate hosts culled aggressively.",
+                  body: "RSS and transcripts flattened into comparable signal - duplicate hosts culled aggressively.",
                   span: "xl:col-span-5",
                 },
                 {
@@ -160,7 +160,7 @@ export default async function Home() {
                 {
                   icon: Cpu,
                   title: "Summarize",
-                  body: "Dense blurbs—not tweet-length SEO—preserve nouns engineers search for.",
+                  body: "Dense blurbs - not tweet-length SEO - preserve nouns engineers search for.",
                   span: "xl:col-span-7 xl:min-h-[200px]",
                 },
                 {
@@ -197,7 +197,7 @@ export default async function Home() {
               </h2>
               <p className="text-ink-muted leading-[1.7] mb-7 text-[1.05rem]">
                 Designers shipping tokens, infra wrangling quotas, founders reading between hype
-                cycles—everyone drowning in novelty. Helix trims the bulletin to narratives that fold
+                cycles - everyone drowning in novelty. Helix trims the bulletin to narratives that fold
                 into your quarter, not trending widgets.
               </p>
               <ul className="space-y-3.5 text-[0.9375rem] text-ink-muted">
@@ -230,7 +230,7 @@ featured:
   headline: "When eval harnesses behave like flaky CI"
   relevance_score: 9.2
   curator_note: >
-    Mirrors how teams regress prompt drift—worth comparing
+    Mirrors how teams regress prompt drift - worth comparing
     to your current offline eval notebooks before next retro.`}
                 </pre>
               </div>
@@ -250,7 +250,7 @@ featured:
                   Follow the faster visual wire
                 </h2>
                 <p className="text-ink-muted leading-relaxed">
-                  We post breaking cards and caption-sized context on Instagram—same rigor, built for
+                  We post breaking cards and caption-sized context on Instagram - same rigor, built for
                   thumb-scrolling between meetings.
                 </p>
               </div>
@@ -284,7 +284,7 @@ featured:
               <article className="rounded-2xl border border-line bg-surface-deep/80 p-9 flex flex-col ring-1 ring-white/[0.03]">
                 <h3 className="font-display text-xl mb-2">Explorer</h3>
                 <p className="font-display text-4xl text-ink mb-1">$0</p>
-                <p className="text-sm text-ink-muted mb-9">Lean daily briefing — perfect for taste-testing.</p>
+                <p className="text-sm text-ink-muted mb-9">Lean daily briefing - perfect for taste-testing.</p>
                 <ul className="space-y-3 text-sm text-ink-muted mb-11 grow">
                   <li className="flex gap-3">
                     <Check className="w-4 h-4 shrink-0 mt-0.5 text-accent" strokeWidth={2} />

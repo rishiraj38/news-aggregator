@@ -14,7 +14,7 @@ export default function SiteFooter() {
         <div>
           <p className="font-display text-lg text-ink tracking-tight">Helix</p>
           <p className="text-sm text-ink-muted mt-2 max-w-sm leading-relaxed">
-            Automated curation—not a substitute for reading primary sources. Built for builders who want signal without the scroll.
+            Automated curation - not a substitute for reading primary sources. Built for builders who want signal without the scroll.
           </p>
         </div>
         <div className="flex flex-wrap gap-x-10 gap-y-4 text-sm text-ink-muted">

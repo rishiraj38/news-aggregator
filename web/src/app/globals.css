@@ -91,12 +91,12 @@ body::after {
   outline-offset: 3px;
 }
 
-/* Hero / marketing mesh — reusable */
+/* Hero / marketing mesh — subtle, natural ambient glow */
 .helix-aurora {
   background:
-    radial-gradient(ellipse 90% 70% at 10% -30%, rgba(129, 140, 248, 0.45), transparent 55%),
-    radial-gradient(ellipse 65% 50% at 90% -10%, rgba(212, 175, 55, 0.12), transparent 48%),
-    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(79, 70, 229, 0.15), transparent 55%);
+    radial-gradient(ellipse 80% 60% at 15% -10%, rgba(129, 140, 248, 0.28), transparent 65%),
+    radial-gradient(ellipse 70% 50% at 85% 0%, rgba(212, 175, 55, 0.16), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 50% -20%, rgba(99, 102, 241, 0.20), transparent 70%);
 }
 
 /* Fine grid overlay */

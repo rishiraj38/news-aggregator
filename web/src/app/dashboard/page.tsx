@@ -186,7 +186,7 @@ export default async function Dashboard() {
             </h1>
             <p className="text-[0.9625rem] sm:text-[1.02rem] text-ink-muted leading-relaxed max-w-[36rem]">
               Live view of curator-ranked stories. Dense when you pick one lane,{" "}
-              <span className="text-ink font-medium">interleaved</span> when several bundles are active—matching
+              <span className="text-ink font-medium">interleaved</span> when several bundles are active - matching
               the overnight pipeline diversity pass.
             </p>
           </div>
@@ -222,7 +222,7 @@ export default async function Dashboard() {
                     {laneSummary.mixScore}
                   </p>
                   <p className="text-sm text-ink-muted leading-relaxed">
-                    Shares reflect surfaced recommendations in your feed—not raw ingest volume. Aim for breadth
+                    Shares reflect surfaced recommendations in your feed - not raw ingest volume. Aim for breadth
                     when you subscribe to multiple bundles.
                   </p>
                 </div>
@@ -403,7 +403,7 @@ export default async function Dashboard() {
             </h2>
             <p className="text-ink-muted max-w-[26rem] mx-auto leading-relaxed mb-10 text-[0.9625rem]">
               Overnight jobs harvest aligned feeds. Once the curator ships your first recommendations, they land
-              here—no gimmicky refresh rituals.
+              here - no gimmicky refresh rituals.
             </p>
             <div className="inline-flex flex-wrap justify-center gap-3 px-5 py-2.5 rounded-xl border border-line-strong bg-surface-raised/90 text-[0.9rem] text-ink-muted">
               <Clock className="w-4 h-4 text-accent shrink-0" strokeWidth={2} />

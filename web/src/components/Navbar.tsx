@@ -41,24 +41,24 @@ export default function Navbar() {
         <div className="flex h-[3.75rem] items-center justify-between gap-4">
           <Link
             href={isSignedIn ? "/dashboard" : "/"}
-            className="flex items-center gap-3 shrink-0 group"
+            className="flex items-center gap-2.5 shrink-0 group"
             onClick={() => setIsOpen(false)}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <span className="relative">
+            <span className="relative flex items-center justify-center">
               <span
-                className="absolute inset-0 rounded-full bg-brand/25 blur-lg scale-125 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                className="absolute inset-0 rounded-full bg-accent/20 blur-md scale-125 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 aria-hidden
               />
               <img
                 src="/logo.png"
-                alt=""
-                width={32}
-                height={32}
-                className="relative object-contain opacity-90 group-hover:opacity-100 transition-opacity"
+                alt="Helix"
+                width={30}
+                height={30}
+                className="relative object-contain transition-transform duration-300 group-hover:scale-105"
               />
             </span>
-            <span className="font-display text-[1.15rem] sm:text-xl text-ink tracking-tight">
+            <span className="font-display text-[1.15rem] sm:text-xl text-ink tracking-tight font-medium">
               Helix
             </span>
           </Link>
