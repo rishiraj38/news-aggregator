@@ -43,10 +43,10 @@ export default async function Home() {
             <div className="flex flex-wrap items-center gap-3 mb-8">
               <span className="inline-flex items-center gap-2 rounded-full border border-line-strong bg-surface-raised/80 backdrop-blur-sm px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-muted">
                 <Sparkles className="w-3.5 h-3.5 text-accent" strokeWidth={2} aria-hidden />
-                Helix v1
+                Helix AI News Curator
               </span>
               <span className="text-xs text-ink-faint tracking-wide hidden sm:inline">
-                Curator-grade · Ships daily · No doom-scroll
+                Autonomous News Curator · Ships Daily · Zero Noise
               </span>
             </div>
 
@@ -62,7 +62,7 @@ export default async function Home() {
               </h1>
 
               <p className="text-lg sm:text-[1.175rem] text-ink-muted leading-[1.7] max-w-2xl mb-10">
-                Helix ingests the technical wild, reads your curator profile once, then serves a
+                As your autonomous AI news curator, Helix ingests the technical wild, reads your curator profile once, then serves a
                 restrained morning dossier: what moved, why it echoes your backlog, where to drill
                 deeper when you&apos;re caffeinated - not when you&apos;re mid-deploy.
               </p>
