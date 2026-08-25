@@ -188,19 +188,19 @@ export default async function Home() {
         </section>
 
         {/* Practitioners + code */}
-        <section className="py-20 sm:py-28 px-4 sm:px-6 lg:px-8">
-          <div className="max-w-6xl mx-auto grid lg:grid-cols-12 gap-14 lg:gap-18 items-start">
-            <div className="lg:col-span-5 lg:sticky lg:top-[6.25rem]">
-              <BookOpen className="w-10 h-10 text-accent mb-6 stroke-[1.15]" aria-hidden />
-              <h2 className="font-display text-[clamp(1.85rem,3.5vw,2.5rem)] tracking-tight mb-5">
+        <section className="py-16 sm:py-24 px-4 sm:px-6 lg:px-8 max-w-full overflow-hidden">
+          <div className="max-w-6xl mx-auto grid lg:grid-cols-12 gap-10 lg:gap-18 items-start min-w-0">
+            <div className="lg:col-span-5 min-w-0 w-full lg:sticky lg:top-[6.25rem]">
+              <BookOpen className="w-9 h-9 sm:w-10 sm:h-10 text-accent mb-5 sm:mb-6 stroke-[1.15]" aria-hidden />
+              <h2 className="font-display text-[clamp(1.65rem,4.5vw,2.5rem)] tracking-tight mb-4 sm:mb-5 leading-tight">
                 Tuned for people who merge before breakfast
               </h2>
-              <p className="text-ink-muted leading-[1.7] mb-7 text-[1.05rem]">
+              <p className="text-ink-muted leading-[1.65] mb-6 sm:mb-7 text-[0.98rem] sm:text-[1.05rem] break-words">
                 Designers shipping tokens, infra wrangling quotas, founders reading between hype
                 cycles - everyone drowning in novelty. Helix trims the bulletin to narratives that fold
                 into your quarter, not trending widgets.
               </p>
-              <ul className="space-y-3.5 text-[0.9375rem] text-ink-muted">
+              <ul className="space-y-3 sm:space-y-3.5 text-[0.875rem] sm:text-[0.9375rem] text-ink-muted">
                 {[
                   "Primary-source bias when feeds allow it.",
                   "Reasoning strings travel with relevance scores.",
@@ -208,18 +208,18 @@ export default async function Home() {
                 ].map((t) => (
                   <li key={t} className="flex gap-3">
                     <Check className="w-4 h-4 shrink-0 mt-0.5 text-accent" strokeWidth={2} />
-                    {t}
+                    <span>{t}</span>
                   </li>
                 ))}
               </ul>
             </div>
-            <div className="lg:col-span-7 rounded-2xl border border-line-strong bg-linear-to-br from-surface-raised via-surface-deep to-surface-raised p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <div className="rounded-[0.875rem] border border-line bg-[#070605] p-7 sm:p-10 font-mono text-[13px] leading-relaxed text-ink-muted overflow-x-auto">
-                <p className="text-ink-faint mb-5 border-b border-line pb-4 flex justify-between gap-4">
+            <div className="lg:col-span-7 min-w-0 w-full max-w-full rounded-2xl border border-line-strong bg-linear-to-br from-surface-raised via-surface-deep to-surface-raised p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] overflow-hidden">
+              <div className="rounded-[0.875rem] border border-line bg-[#070605] p-4 sm:p-7 md:p-10 font-mono text-[12px] sm:text-[13px] leading-relaxed text-ink-muted overflow-x-auto max-w-full">
+                <p className="text-ink-faint mb-4 sm:mb-5 border-b border-line pb-3 sm:pb-4 flex justify-between gap-4 text-xs">
                   <span>digest.preview.yaml</span>
                   <span className="text-brand/80">live window</span>
                 </p>
-                <pre className="whitespace-pre text-[12.5px] sm:text-[13px]">
+                <pre className="whitespace-pre text-[11.5px] sm:text-[13px] leading-relaxed">
                   {`run_date: ${new Date().toISOString().slice(0, 10)}
 edition: helix-v1
 profile_bias:
@@ -241,7 +241,7 @@ featured:
         {/* Instagram CTA ribbon */}
         <section className="py-16 sm:py-20 px-4 sm:px-6 lg:px-8">
           <div className="max-w-6xl mx-auto relative overflow-hidden rounded-3xl border border-brand/25 bg-linear-to-r from-brand-deep/40 via-surface-raised to-brand-deep/30 p-[1px]">
-            <div className="rounded-[calc(1.5rem-1px)] bg-surface-deep/90 backdrop-blur-xl px-8 py-12 sm:px-12 sm:py-14 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
+            <div className="rounded-[calc(1.5rem-1px)] bg-surface-deep/90 backdrop-blur-xl px-5 py-9 sm:px-12 sm:py-14 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
               <div className="max-w-xl">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand mb-3">
                   Between digests
