@@ -82,10 +82,10 @@ export default async function Home() {
                   href={SITE_INSTAGRAM_HREF}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 min-h-12 px-8 rounded-xl border border-line-strong bg-surface-raised/60 backdrop-blur-sm text-ink hover:border-brand/35 hover:bg-brand-subtle transition-colors text-[0.9375rem] font-medium"
+                  className="btn-insta-gradient group inline-flex items-center justify-center gap-2 min-h-12 px-8 rounded-xl border border-line-strong bg-surface-raised/60 backdrop-blur-sm text-ink font-medium text-[0.9375rem]"
                 >
                   <Instagram className="w-[1.125rem] h-[1.125rem]" strokeWidth={2} aria-hidden />
-                  Breaking visuals on IG
+                  <span>Breaking visuals on IG</span>
                 </a>
               </div>
 
@@ -258,10 +258,10 @@ featured:
                 href={SITE_INSTAGRAM_HREF}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2.5 min-h-12 px-8 rounded-xl bg-ink text-surface-deep font-semibold text-sm hover:opacity-95 transition-opacity shrink-0 shadow-[0_18px_40px_-18px_rgba(240,235,227,0.35)]"
+                className="btn-insta-gradient group inline-flex items-center justify-center gap-2.5 min-h-12 px-8 rounded-xl bg-ink text-surface-deep font-semibold text-sm shrink-0 border border-transparent shadow-[0_18px_40px_-18px_rgba(240,235,227,0.35)]"
               >
                 <Instagram className="w-5 h-5" strokeWidth={2} aria-hidden />
-                @formula1_boys_69
+                <span>@formula1_boys_69</span>
               </a>
             </div>
           </div>
