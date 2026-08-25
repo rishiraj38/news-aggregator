@@ -79,7 +79,7 @@ export default function Navbar() {
             ) : (
               <Link
                 href="/sign-in"
-                className="hidden sm:inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-surface-deep hover:brightness-110 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_32px_-18px_rgba(212,175,55,0.45)] transition-[filter] active:scale-[0.98]"
+                className="hidden sm:inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-surface-deep hover:brightness-110 shadow-[inset_0_1px_0_rgba(255,255,255,0.15),0_12px_32px_-18px_rgba(212,175,55,0.45)] transition-[filter] active:scale-[0.98] cursor-pointer"
               >
                 Sign in
               </Link>
@@ -89,7 +89,7 @@ export default function Navbar() {
               aria-expanded={isOpen}
               aria-label={isOpen ? "Close menu" : "Open menu"}
               onClick={() => setIsOpen((o) => !o)}
-              className="md:hidden p-2 -mr-2 rounded-md text-ink-muted hover:text-ink hover:bg-surface-raised transition-colors"
+              className="md:hidden p-2 -mr-2 rounded-md text-ink-muted hover:text-ink hover:bg-surface-raised transition-colors cursor-pointer"
             >
               {isOpen ? <X size={22} strokeWidth={1.75} /> : <Menu size={22} strokeWidth={1.75} />}
             </button>

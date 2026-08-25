@@ -248,7 +248,7 @@ export default function BriefingRevealOverlay({
             e.stopPropagation();
             dismiss();
           }}
-          className="pointer-events-auto min-h-[2.875rem] rounded-full bg-linear-to-r from-brand/90 via-accent to-brand-deep/90 px-9 text-[13px] font-semibold uppercase tracking-[0.18em] text-surface-deep shadow-[0_18px_50px_-32px_rgb(79_70_229/1)] transition-[scale,brightness,box-shadow] duration-200 hover:brightness-[1.08] hover:shadow-[0_22px_64px_-38px_rgb(212_175_55/0.35)] active:scale-[0.98] briefing-reveal-rise briefing-rise-d540 mb-12"
+          className="pointer-events-auto min-h-[2.875rem] rounded-full bg-linear-to-r from-brand/90 via-accent to-brand-deep/90 px-9 text-[13px] font-semibold uppercase tracking-[0.18em] text-surface-deep shadow-[0_18px_50px_-32px_rgb(79_70_229/1)] transition-[scale,brightness,box-shadow] duration-200 hover:brightness-[1.08] hover:shadow-[0_22px_64px_-38px_rgb(212_175_55/0.35)] active:scale-[0.98] briefing-reveal-rise briefing-rise-d540 mb-12 cursor-pointer"
         >
           Enter briefing
         </button>

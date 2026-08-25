@@ -192,17 +192,25 @@ export default async function Dashboard() {
           </div>
 
           <div className="flex flex-col sm:flex-row lg:flex-col gap-3 lg:justify-end">
-            <div
-              className={cn(
-                "inline-flex items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-medium backdrop-blur-sm shadow-[0_18px_50px_-32px_rgb(15_23_42/1)]",
-                dbUser?.role === "admin"
-                  ? "border-accent/35 bg-accent-soft/70 text-ink"
-                  : "border-line bg-surface-raised/85 text-ink-muted",
-              )}
-            >
-              <Sparkles className="w-4 h-4 text-accent shrink-0" strokeWidth={1.75} />
-              {dbUser?.role === "admin" ? "Administrator" : "Explorer plan"}
-            </div>
+            {dbUser?.role === "admin" ? (
+              <div className="admin-badge-glow inline-flex items-center gap-3 rounded-2xl px-4.5 py-3 text-sm font-medium cursor-default select-none">
+                <span className="relative flex items-center justify-center">
+                  <Sparkles className="admin-sparkle-icon w-4 h-4 text-accent shrink-0" strokeWidth={2} />
+                </span>
+                <span className="font-semibold tracking-wide bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-100 bg-clip-text text-transparent">
+                  Administrator
+                </span>
+                <span className="flex h-2 w-2 relative ml-1" title="Admin Active">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
+                </span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-3 rounded-2xl border border-line bg-surface-raised/85 px-4 py-3.5 text-sm font-medium text-ink-muted backdrop-blur-sm shadow-[0_18px_50px_-32px_rgb(15_23_42/1)]">
+                <Sparkles className="w-4 h-4 text-accent shrink-0" strokeWidth={1.75} />
+                Explorer plan
+              </div>
+            )}
           </div>
         </header>
 

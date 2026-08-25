@@ -94,8 +94,8 @@ export default function TopicBundlePicker({ initialTopics, disabled = false }: P
           disabled={disabled}
           onClick={selectAll}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full border border-accent/35 bg-accent-soft/60 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink hover:bg-accent-soft transition-colors",
-            disabled && "opacity-45 pointer-events-none",
+            "inline-flex items-center gap-1.5 rounded-full border border-accent/35 bg-accent-soft/60 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink hover:bg-accent-soft transition-colors cursor-pointer",
+            disabled && "opacity-45 pointer-events-none cursor-not-allowed",
           )}
         >
           <Layers className="w-3.5 h-3.5" strokeWidth={2} aria-hidden />
@@ -113,11 +113,11 @@ export default function TopicBundlePicker({ initialTopics, disabled = false }: P
               disabled={disabled}
               onClick={() => toggle(pack.id)}
               className={cn(
-                "text-left rounded-xl border px-4 py-3 transition-[border-color,background-color] min-h-[5.25rem]",
+                "text-left rounded-xl border px-4 py-3 transition-[border-color,background-color] min-h-[5.25rem] cursor-pointer",
                 on
                   ? "border-accent/45 bg-accent-soft/90"
                   : "border-line bg-surface-raised/80 hover:border-line-strong",
-                disabled && "opacity-60 pointer-events-none",
+                disabled && "opacity-60 pointer-events-none cursor-not-allowed",
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -143,7 +143,7 @@ export default function TopicBundlePicker({ initialTopics, disabled = false }: P
           type="button"
           disabled={disabled || saving || !dirty}
           onClick={() => save()}
-          className="inline-flex items-center justify-center gap-2 min-h-11 px-5 rounded-xl bg-accent text-surface-deep text-sm font-semibold hover:brightness-110 disabled:opacity-45 disabled:pointer-events-none transition-[filter]"
+          className="inline-flex items-center justify-center gap-2 min-h-11 px-5 rounded-xl bg-accent text-surface-deep text-sm font-semibold hover:brightness-110 disabled:opacity-45 disabled:pointer-events-none disabled:cursor-not-allowed cursor-pointer transition-[filter]"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           Save topic bundles

@@ -57,6 +57,29 @@ body {
   font-family: var(--font-display);
 }
 
+/* Global interactive pointer cursor consistency */
+button,
+[role="button"],
+summary,
+a,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+input[type="checkbox"],
+input[type="radio"],
+select,
+label[for] {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+a[aria-disabled="true"],
+input:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
 /* Paper grain */
 body::before {
   content: "";
@@ -218,6 +241,89 @@ body::after {
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3));
 }
 
+
+/* ── Administrator Executive Badge Animations ─────────────────── */
+@keyframes admin-border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes sparkle-pulse {
+  0%, 100% {
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 4px rgba(212, 175, 55, 0.7));
+  }
+  50% {
+    transform: scale(1.22) rotate(14deg);
+    filter: drop-shadow(0 0 10px rgba(212, 175, 55, 1));
+  }
+}
+
+.admin-badge-glow {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.15) 0%, rgba(20, 18, 15, 0.95) 50%, rgba(212, 175, 55, 0.10) 100%);
+  border: 1px solid rgba(212, 175, 55, 0.45);
+  box-shadow: 
+    0 12px 32px -12px rgba(0, 0, 0, 0.9),
+    0 0 22px -3px rgba(212, 175, 55, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.admin-badge-glow::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.9), transparent, rgba(212, 175, 55, 0.9), transparent);
+  background-size: 200% 100%;
+  animation: admin-border-flow 5s linear infinite;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.admin-badge-glow::after {
+  content: "";
+  position: absolute;
+  top: -50%;
+  left: -80%;
+  width: 50%;
+  height: 200%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  transform: rotate(25deg);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.admin-badge-glow:hover {
+  transform: translateY(-2px) scale(1.02);
+  border-color: rgba(212, 175, 55, 0.7);
+  box-shadow: 
+    0 18px 45px -10px rgba(212, 175, 55, 0.4),
+    0 0 32px 2px rgba(212, 175, 55, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.admin-badge-glow:hover::after {
+  opacity: 1;
+  left: 150%;
+  transition: left 0.8s ease-in-out;
+}
+
+.admin-sparkle-icon {
+  animation: sparkle-pulse 3s ease-in-out infinite;
+}
 
 @keyframes helix-float {
   0%,
