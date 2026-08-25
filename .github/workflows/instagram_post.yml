@@ -10,8 +10,11 @@ name: Instagram post
 
 on:
   workflow_dispatch: {}
-  # Daily, ~30min after Daily AI Digest (10:30 UTC) so the DB usually has fresh digests.
+  # Two posts per day:
+  #   Morning: 04:30 UTC (10:00 AM IST)
+  #   Evening: 11:00 UTC (4:30 PM IST) — ~30min after Daily AI Digest
   schedule:
+    - cron: "30 4 * * *"
     - cron: "0 11 * * *"
 
 jobs:

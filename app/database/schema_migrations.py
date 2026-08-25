@@ -30,3 +30,9 @@ def ensure_image_url_columns() -> None:
         "general_rss_articles",
     ):
         _add_column_if_missing(table, "image_url", col_type)
+
+
+def ensure_instagram_posted_column() -> None:
+    """Add posted_to_instagram to digests table (tracks which stories were already posted)."""
+    col_type = "TEXT" if engine.dialect.name == "sqlite" else "VARCHAR"
+    _add_column_if_missing("digests", "posted_to_instagram", col_type)

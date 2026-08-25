@@ -52,12 +52,15 @@ main.py / app/daily_runner.py          ← Entry point (GitHub Actions cron)
 
 ```
 publish_instagram_card.py
+├── Runs ensure_instagram_posted_column() migration
 ├── Fetches recent digests from DB
-├── CuratorAgent ranks → picks top story
-├── Resolves thumbnail (OG/YouTube/BBC)
+├── Filters out digests with posted_to_instagram="true" (dedup)
+├── CuratorAgent ranks → picks top unposted story
+├── Resolves thumbnail (OG/YouTube/BBC → 1024px)
 ├── render_breaking_news_card()        → app/services/news_graphic.py (Pillow)
 ├── Uploads JPEG (Cloudinary / anon hosts)
-└── Publishes via Meta Instagram Graph API
+├── Publishes via Meta Instagram Graph API
+└── Marks digest as posted_to_instagram="true" in DB
 ```
 
 ---
@@ -284,8 +287,9 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 - **Secrets needed**: `DATABASE_URL`, `GROQ_API_KEY`, `GROQ_API_KEY2`, `MY_EMAIL`, `APP_PASSWORD`
 
 ### `instagram_post.yml`
-- **Schedule**: 11:00 UTC daily (30 min after digest)
+- **Schedule**: 2× daily — 04:30 UTC (10:00 AM IST) + 11:00 UTC (4:30 PM IST)
 - **Runs**: `publish_instagram_card.py --publish`
+- **Dedup**: skips digests with `posted_to_instagram="true"`, marks after successful post
 - **Secrets needed**: all digest secrets + `META_ACCESS_TOKEN`, `INSTAGRAM_BUSINESS_ID`, `CLOUDINARY_*`
 
 ### `docker-publish.yml`

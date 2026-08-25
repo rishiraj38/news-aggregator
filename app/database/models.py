@@ -72,6 +72,7 @@ class Digest(Base):
     image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     sent_at = Column(DateTime, nullable=True)
+    posted_to_instagram = Column(String, nullable=True)  # "true" when posted
 
 
 class User(Base):

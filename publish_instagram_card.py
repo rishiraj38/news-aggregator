@@ -427,7 +427,7 @@ def main() -> int:
 
     from app.database.connection import engine
     from app.database.models import Base
-    from app.database.schema_migrations import ensure_image_url_columns
+    from app.database.schema_migrations import ensure_image_url_columns, ensure_instagram_posted_column
     from app.database.repository import Repository
     from app.services.user_service import UserService
     from app.agent.curator_agent import CuratorAgent
@@ -437,6 +437,7 @@ def main() -> int:
 
     Base.metadata.create_all(engine)
     ensure_image_url_columns()
+    ensure_instagram_posted_column()
 
     logo_png = os.getenv("HELIX_LOGO_PATH", "").strip() or None
 
@@ -450,6 +451,15 @@ def main() -> int:
     digests = repo.get_recent_digests(hours=args.hours, exclude_sent=False)
     if not digests:
         logger.error("No digests.")
+        return 1
+
+    # Skip stories already posted to Instagram (for 2-posts-per-day dedup)
+    before = len(digests)
+    digests = [d for d in digests if str(d.get("posted_to_instagram", "")).lower() != "true"]
+    if before != len(digests):
+        logger.info("Filtered %d already-posted digests → %d remaining", before - len(digests), len(digests))
+    if not digests:
+        logger.error("All recent digests already posted to Instagram.")
         return 1
 
     cap = max(12, min(240, int(os.getenv("INSTAGRAM_CURATOR_DIGEST_CAP", "40"))))
@@ -538,6 +548,9 @@ def main() -> int:
             facebook_page_id=fb_page or None,
         )
         logger.info("Published Instagram media id: %s", result.get("instagram_media_id"))
+        # Mark this digest so the next run picks a different story
+        repo.mark_digest_posted_instagram(d["id"])
+        logger.info("Marked digest %s as posted to Instagram", d["id"])
         return 0
     except Exception as e:
         logger.error("%s", e)

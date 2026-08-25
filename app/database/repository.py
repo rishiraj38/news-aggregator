@@ -343,6 +343,13 @@ class Repository:
         self.session.commit()
         return digest
 
+    def mark_digest_posted_instagram(self, digest_id: str) -> None:
+        """Flag a digest as already posted to Instagram (prevents duplicate posts)."""
+        d = self.session.query(Digest).filter_by(id=digest_id).first()
+        if d:
+            d.posted_to_instagram = "true"
+            self.session.commit()
+
     def get_recent_digests(
         self, hours: int = 24, exclude_sent: bool = True
     ) -> List[Dict[str, Any]]:
@@ -365,6 +372,7 @@ class Repository:
                 "image_url": getattr(d, "image_url", None),
                 "created_at": d.created_at,
                 "sent_at": d.sent_at,
+                "posted_to_instagram": getattr(d, "posted_to_instagram", None),
             }
             for d in digests
         ]
