@@ -505,8 +505,13 @@ function FeedSection({
                 laneSx.cardRail,
               )}
             >
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <span className={laneSx.pill}>{digestLaneHumanLabel(laneSx.lane)}</span>
+              <div className="flex items-center justify-between gap-3 mb-3.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={laneSx.pill}>{digestLaneHumanLabel(laneSx.lane)}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wider text-ink-faint/80 truncate">
+                    {rec.digest.article_type.replace(/_/g, " · ")}
+                  </span>
+                </div>
                 <span
                   className={cn("text-[0.9rem] font-bold tabular-nums shrink-0", scoreHue)}
                   title="Curator relevance"
@@ -515,11 +520,7 @@ function FeedSection({
                 </span>
               </div>
 
-              <div className="absolute top-14 right-4 text-[10px] font-medium uppercase tracking-wider text-ink-faint/80 pointer-events-none select-none truncate max-w-[45%] text-right opacity-0 group-hover/card:opacity-100 transition-opacity">
-                {rec.digest.article_type.replace(/_/g, " · ")}
-              </div>
-
-              <h3 className="font-display text-[1.12rem] sm:text-[1.2rem] leading-snug mb-4 pr-1">
+              <h3 className="font-display text-[1.12rem] sm:text-[1.2rem] leading-snug mb-4">
                 <a
                   href={rec.digest.url}
                   target="_blank"
