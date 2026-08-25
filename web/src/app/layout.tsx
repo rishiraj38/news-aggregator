@@ -90,6 +90,9 @@ export const metadata: Metadata = {
     icon: "/favicon.ico",
     apple: "/logo.png",
   },
+  verification: {
+    google: "google12e56e6fa520b24a",
+  },
 };
 
 const jsonLd = {
