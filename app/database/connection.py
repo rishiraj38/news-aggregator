@@ -51,7 +51,13 @@ def get_database_info() -> dict:
     }
 
 
-engine = create_engine(get_database_url())
+engine = create_engine(
+    get_database_url(),
+    pool_pre_ping=True,       # Detect stale/dead SSL connections before use
+    pool_recycle=300,          # Recycle connections every 5 minutes
+    pool_size=5,
+    max_overflow=10,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

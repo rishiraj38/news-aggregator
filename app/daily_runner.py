@@ -165,16 +165,31 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             log_progress(f"⚠ DIGEST_EMAIL_TEST_ONLY set — personalization runs only for {digest_email_test_only}")
 
         for user in active_users:
+            # Eagerly capture identifiers BEFORE any DB work so error
+            # handlers never trigger a lazy-load on a broken session.
             try:
-                if digest_email_test_only and user.email.strip().lower() != digest_email_test_only:
+                user_email = user.email
+                user_name = user.name
+                user_id = user.id
+                user_role = user.role
+            except Exception:
+                logger.warning("Could not read user attributes — skipping.")
+                try:
+                    repo.session.rollback()
+                except Exception:
+                    pass
+                continue
+
+            try:
+                if digest_email_test_only and user_email.strip().lower() != digest_email_test_only:
                     continue
                 # --- Trial Expiration Check (27 Days) ---
-                if user.role != "admin": # Admins are immune
+                if user_role != "admin": # Admins are immune
                     # Ensure timezone awareness compatibility
                     created_at = user.created_at
                     
                     if created_at is None:
-                        logger.warning(f"User {user.email} has NULL created_at. defaulting to 0 days active.")
+                        logger.warning(f"User {user_email} has NULL created_at. defaulting to 0 days active.")
                         days_active = 0
                     else:
                         if created_at.tzinfo is None:
@@ -186,14 +201,14 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     
                     if days_left == 2 and str(user.trial_warning_2_sent).lower() != "true":
                         from app.services.process_email import send_trial_warning_email
-                        logger.info(f"User {user.email} has 2 days left on trial. Sending warning email.")
+                        logger.info(f"User {user_email} has 2 days left on trial. Sending warning email.")
                         if send_trial_warning_email(user, days_left):
                             user.trial_warning_2_sent = "true"
                             repo.session.commit()
                     
                     elif days_left == 1 and str(user.trial_warning_1_sent).lower() != "true":
                         from app.services.process_email import send_trial_warning_email
-                        logger.info(f"User {user.email} has 1 day left on trial. Sending warning email.")
+                        logger.info(f"User {user_email} has 1 day left on trial. Sending warning email.")
                         if send_trial_warning_email(user, days_left):
                             user.trial_warning_1_sent = "true"
                             repo.session.commit()
@@ -202,12 +217,12 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     if days_active >= trial_limit:
                          if str(user.trial_expired_sent).lower() != "true":
                              from app.services.process_email import send_trial_expired_email
-                             logger.info(f"User {user.email} trial expired. Sending expiration email.")
+                             logger.info(f"User {user_email} trial expired. Sending expiration email.")
                              if send_trial_expired_email(user):
                                  user.trial_expired_sent = "true"
                                  repo.session.commit()
 
-                         msg = f"User {user.email} trial expired ({days_active} days >= {trial_limit}). Marking expired & skipping."
+                         msg = f"User {user_email} trial expired ({days_active} days >= {trial_limit}). Marking expired & skipping."
                          logger.info(msg)
                          log_progress(msg)
                          
@@ -220,7 +235,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 if run_id:
                      repo.update_pipeline_run(run_id, users_processed=user_count)
                 
-                msg = f"--- Processing for user: {user.name} ({user.email}) ---"
+                msg = f"--- Processing for user: {user_name} ({user_email}) ---"
                 logger.info(msg)
                 log_progress(msg)
 
@@ -233,7 +248,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 
                 if user.role == "admin" and admin_flag != "true":
                     from app.services.process_email import send_admin_welcome_email
-                    logger.info(f"User {user.email} is a new admin. Sending welcome email...")
+                    logger.info(f"User {user_email} is a new admin. Sending welcome email...")
                     if send_admin_welcome_email(user):
                         repo.update_user_admin_welcome(user.id)
                         repo.session.refresh(user)  # Refresh to get updated flag
@@ -243,13 +258,13 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 user_profile = user_service.get_user_profile(user)
                 
                 # 1.5 Filter out already seen digests
-                seen_digest_ids = set(repo.get_user_recommended_digest_ids(user.id))
-                logger.info(f"User {user.name} has {len(seen_digest_ids)} previously recommended digests")
+                seen_digest_ids = set(repo.get_user_recommended_digest_ids(user_id))
+                logger.info(f"User {user_name} has {len(seen_digest_ids)} previously recommended digests")
                 logger.debug(f"Seen IDs sample: {list(seen_digest_ids)[:5] if seen_digest_ids else []}")
                 
                 unseen_digests = [d for d in recent_digests if d['id'] not in seen_digest_ids]
                 if not unseen_digests:
-                    msg = f"No new digests for {user.name} (All {len(recent_digests)} recent items already recommended). Skipping."
+                    msg = f"No new digests for {user_name} (All {len(recent_digests)} recent items already recommended). Skipping."
                     logger.info(msg)
                     log_progress(msg)
                     time.sleep(0.5)  # Small sleep to avoid instant loops looking like bugs
@@ -268,7 +283,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
 
                 if not unseen_digests:
                     msg = (
-                        f"No digest candidates matched topic bundles {sorted(topic_set)} for {user.name} "
+                        f"No digest candidates matched topic bundles {sorted(topic_set)} for {user_name} "
                         "(new items existed but none in your bundles — expand topics or wait for matching coverage)."
                     )
                     logger.info(msg)
@@ -276,7 +291,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     time.sleep(0.5)
                     continue
                 
-                logger.info(f"Ranking {len(unseen_digests)} new digests for {user.name} (out of {len(recent_digests)} total recent)...")
+                logger.info(f"Ranking {len(unseen_digests)} new digests for {user_name} (out of {len(recent_digests)} total recent)...")
 
                 # 2. Rank Content
                 curator = CuratorAgent(user_profile)
@@ -284,7 +299,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 ranked_articles = curator.rank_digests(unseen_digests)
                 
                 if not ranked_articles:
-                    msg = f"No relevant articles found for {user.name} in new batch. Skipping."
+                    msg = f"No relevant articles found for {user_name} in new batch. Skipping."
                     logger.info(msg)
                     log_progress(msg)
                     continue
@@ -317,7 +332,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     # Let's rely on exclude_sent=False fetching OLD digests, so existing recs exist.
                     
                     rec = repo.create_recommendation(
-                        user_id=user.id,
+                        user_id=user_id,
                         digest_id=article.digest_id,
                         relevance_score=article.relevance_score,
                         rank=article.rank,
@@ -338,10 +353,10 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                         new_recommendations.append(rec)
                         final_articles_to_send.append(article)
                 
-                logger.info(f"Saved {len(new_recommendations)} NEW recommendations for {user.name}")
+                logger.info(f"Saved {len(new_recommendations)} NEW recommendations for {user_name}")
 
                 if not final_articles_to_send:
-                     msg = f"No new recommendations for {user.name}. Skipping email."
+                     msg = f"No new recommendations for {user_name}. Skipping email."
                      logger.info(msg)
                      log_progress(msg)
                      continue
@@ -357,12 +372,17 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 
                 if email_result["success"]:
                     email_count += 1
-                    log_progress(f"✓ Email sent to {user.email}")
+                    log_progress(f"✓ Email sent to {user_email}")
                 else:
-                    logger.error(f"✗ Failed to send email to {user.email}: {email_result.get('error')}")
+                    logger.error(f"✗ Failed to send email to {user_email}: {email_result.get('error')}")
 
             except Exception as e:
-                logger.error(f"Error processing for user {user.email}: {e}")
+                logger.error(f"Error processing for user {user_email}: {e}")
+                # Roll back the broken transaction so the session can be reused
+                try:
+                    repo.session.rollback()
+                except Exception as rb_err:
+                    logger.warning(f"Rollback also failed: {rb_err}")
             
             # Rate Limit Protection (Groq has RPM limits)
             # Increased to 10s to stay safely below 30 RPM (approx 6 RPM)
@@ -378,8 +398,16 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
 
     except Exception as e:
         logger.error(f"Pipeline failed with error: {e}", exc_info=True)
+        # Roll back any broken transaction before attempting the status update
+        try:
+            repo.session.rollback()
+        except Exception:
+            pass
         if run_id:
-            repo.update_pipeline_run(run_id, status="FAILED", log_entry=f"Error: {str(e)}")
+            try:
+                repo.update_pipeline_run(run_id, status="FAILED", log_entry=f"Error: {str(e)}")
+            except Exception as update_err:
+                logger.error(f"Could not update pipeline run status: {update_err}")
         results["error"] = str(e)
 
     end_time = datetime.now(timezone.utc)
