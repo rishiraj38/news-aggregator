@@ -30,10 +30,6 @@ jobs:
       - name: Install uv (Fast Package Manager)
         uses: astral-sh/setup-uv@v1
 
-      - name: Install Deno (required by yt-dlp for YouTube extraction)
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
 
       - name: Install Dependencies
         run: |
@@ -48,6 +44,7 @@ jobs:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
           WEBSHARE_USERNAME: ${{ secrets.WEBSHARE_USERNAME }}
           WEBSHARE_PASSWORD: ${{ secrets.WEBSHARE_PASSWORD }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           # Newsletter footers / CTAs (Repository variables — public URLs)
           HELIX_WEBSITE_URL: ${{ vars.HELIX_WEBSITE_URL }}
           HELIX_PRICING_URL: ${{ vars.HELIX_PRICING_URL }}
