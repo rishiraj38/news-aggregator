@@ -24,11 +24,12 @@ class SearchAgent:
             
             cmd = [
                 "uv", "run", "yt-dlp",
-                f"ytsearch{self.top_n+5}:{query}", # Fetch a few extra to filter
+                f"ytsearch{self.top_n+5}:{query}",  # Fetch a few extra to filter
                 "--dump-json",
                 "--no-playlist",
                 "--quiet",
-                "--skip-download"
+                "--skip-download",
+                "--js-runtimes", "deno",
             ]
             
             # Run subprocess

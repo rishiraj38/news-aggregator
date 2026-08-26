@@ -38,19 +38,24 @@ def rss_entry_thumbnail_url(entry, link: str) -> Optional[str]:
 
 
 def get_proxy_handler():
-    """Create a URL opener with proxy support for feedparser."""
+    """Return a proxies dict for ``requests.get(proxies=…)``."""
     proxy_username = os.getenv("WEBSHARE_USERNAME")
     proxy_password = os.getenv("WEBSHARE_PASSWORD")
 
     if not proxy_username or not proxy_password:
         return None
 
-    from urllib.request import ProxyHandler, build_opener
-
     proxy_url = f"http://{proxy_username}:{proxy_password}@proxy.webshare.io:8080"
-    proxy_support = ProxyHandler({"http": proxy_url, "https": proxy_url})
-    opener = build_opener(proxy_support)
-    return opener
+    return {"http": proxy_url, "https": proxy_url}
+
+
+_RSS_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; HelixNewsCurator/1.0; "
+        "+https://helix-seven-eta.vercel.app)"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+}
 
 
 def extract_feed_entry_image_url(entry) -> Optional[str]:
@@ -150,12 +155,16 @@ class BaseScraper(ABC):
 
         for rss_url in self.rss_urls:
             try:
-                if proxy_handler:
-                    response = requests.get(rss_url, timeout=30)
-                    response.raise_for_status()
-                    feed = feedparser.parse(response.content)
-                else:
-                    feed = feedparser.parse(rss_url)
+                # Always use requests so we can send a proper User-Agent
+                # (some feeds 403 bare urllib / feedparser user-agents)
+                response = requests.get(
+                    rss_url,
+                    headers=_RSS_HEADERS,
+                    proxies=proxy_handler,  # None is fine — requests ignores it
+                    timeout=30,
+                )
+                response.raise_for_status()
+                feed = feedparser.parse(response.content)
 
                 if not feed.entries:
                     continue

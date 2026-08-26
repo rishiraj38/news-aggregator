@@ -28,7 +28,7 @@ RSS_TOPIC_FEED_SCRAPERS: List[dict[str, Any]] = [
             "https://feeds.bbci.co.uk/news/rss.xml",
             "https://feeds.bbci.co.uk/news/world/rss.xml",
             "https://feeds.bbci.co.uk/news/politics/rss.xml",
-            "https://www.theguardian.com/world/rss.xml",
+            "https://www.theguardian.com/world/rss",
         ],
     },
     {

@@ -30,6 +30,11 @@ jobs:
       - name: Install uv (Fast Package Manager)
         uses: astral-sh/setup-uv@v1
 
+      - name: Install Deno (required by yt-dlp for YouTube extraction)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Install Dependencies
         run: |
           uv pip install -r requirements.txt --system
