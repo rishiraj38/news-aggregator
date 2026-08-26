@@ -1,13 +1,52 @@
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable, TypeVar
+import logging
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import OperationalError, PendingRollbackError
 from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, GeneralRSSArticle, Digest, User, Recommendation, PipelineRun
 from .connection import get_session
+
+_logger = logging.getLogger(__name__)
+
+T = TypeVar("T")
 
 
 class Repository:
     def __init__(self, session: Optional[Session] = None):
         self.session = session or get_session()
+
+    def _reconnect(self) -> None:
+        """Close the broken session and open a fresh one."""
+        try:
+            self.session.close()
+        except Exception:
+            pass
+        self.session = get_session()
+        _logger.info("Reconnected to database with a fresh session.")
+
+    def _safe_execute(self, fn: Callable[[], T], retries: int = 3) -> T:
+        """Execute *fn* with automatic rollback + reconnect on SSL drops.
+
+        Catches OperationalError / PendingRollbackError, rolls back, gets a
+        new session, and retries up to *retries* times before re-raising.
+        """
+        last_err: Exception | None = None
+        for attempt in range(1, retries + 1):
+            try:
+                return fn()
+            except (OperationalError, PendingRollbackError) as exc:
+                last_err = exc
+                _logger.warning(
+                    "DB connection error (attempt %d/%d): %s",
+                    attempt, retries, exc,
+                )
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
+                self._reconnect()
+        raise last_err  # type: ignore[misc]
+
 
     def _bulk_create_items(
         self,
@@ -435,7 +474,9 @@ class Repository:
 
     def get_active_users(self) -> List[User]:
         # String 'true' because sqlite/simple mapping. In production use real boolean.
-        return self.session.query(User).filter(User.is_active == "true").all()
+        return self._safe_execute(
+            lambda: self.session.query(User).filter(User.is_active == "true").all()
+        )
 
     def update_user_preferences(self, user_id: str, new_preferences: str) -> bool:
         user = self.session.query(User).filter_by(id=user_id).first()
@@ -469,44 +510,50 @@ class Repository:
         reasoning: str,
     ) -> Recommendation:
         import uuid
-        # Check if already recommended
-        existing = (
-            self.session.query(Recommendation)
-            .filter_by(user_id=user_id, digest_id=digest_id)
-            .first()
-        )
-        if existing:
-            return existing
 
-        # Validate digest exists to prevent FK violation/orphans
-        digest = self.session.query(Digest).filter_by(id=digest_id).first()
-        if not digest:
-            print(f"⚠️ Warning: Attempted to recommend missing digest {digest_id}")
-            return None
+        def _do():
+            # Check if already recommended
+            existing = (
+                self.session.query(Recommendation)
+                .filter_by(user_id=user_id, digest_id=digest_id)
+                .first()
+            )
+            if existing:
+                return existing
 
-        rec = Recommendation(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            digest_id=digest_id,
-            relevance_score=str(relevance_score),
-            rank=str(rank),
-            reasoning=reasoning,
-            created_at=datetime.now(timezone.utc),
-        )
-        self.session.add(rec)
-        self.session.commit()
-        return rec
+            # Validate digest exists to prevent FK violation/orphans
+            digest = self.session.query(Digest).filter_by(id=digest_id).first()
+            if not digest:
+                _logger.warning("Attempted to recommend missing digest %s", digest_id)
+                return None
+
+            rec = Recommendation(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                digest_id=digest_id,
+                relevance_score=str(relevance_score),
+                rank=str(rank),
+                reasoning=reasoning,
+                created_at=datetime.now(timezone.utc),
+            )
+            self.session.add(rec)
+            self.session.commit()
+            return rec
+
+        return self._safe_execute(_do)
 
     def get_user_recommended_digest_ids(self, user_id: str) -> List[str]:
         """
         Returns a list of digest IDs that have already been recommended to the user.
         """
-        return [
-            rec.digest_id
-            for rec in self.session.query(Recommendation.digest_id)
-            .filter_by(user_id=user_id)
-            .all()
-        ]
+        def _do():
+            return [
+                rec.digest_id
+                for rec in self.session.query(Recommendation.digest_id)
+                .filter_by(user_id=user_id)
+                .all()
+            ]
+        return self._safe_execute(_do)
 
     def get_user_feed(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
         """
@@ -554,23 +601,24 @@ class Repository:
         log_entry: Optional[str] = None, 
         users_processed: Optional[int] = None
     ):
-        run = self.session.query(PipelineRun).filter_by(id=run_id).first()
-        if run:
-            if status:
-                run.status = status
-                if status in ["SUCCESS", "FAILED"]:
-                    run.end_time = datetime.now(timezone.utc)
-            
-            if log_entry:
-                timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
-                # Append to existing log summary
-                current_log = run.log_summary or ""
-                # Keep log size manageable (last 5000 chars?) - For now just append
-                run.log_summary = f"{current_log}\n[{timestamp}] {log_entry}".strip()
-            
-            if users_processed is not None:
-                run.users_processed = str(users_processed)
-            
-            self.session.commit()
-            return True
-        return False
+        def _do():
+            run = self.session.query(PipelineRun).filter_by(id=run_id).first()
+            if run:
+                if status:
+                    run.status = status
+                    if status in ["SUCCESS", "FAILED"]:
+                        run.end_time = datetime.now(timezone.utc)
+                
+                if log_entry:
+                    timestamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+                    current_log = run.log_summary or ""
+                    run.log_summary = f"{current_log}\n[{timestamp}] {log_entry}".strip()
+                
+                if users_processed is not None:
+                    run.users_processed = str(users_processed)
+                
+                self.session.commit()
+                return True
+            return False
+
+        return self._safe_execute(_do)
