@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 _YT_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 _YT_VIDEOS_URL = "https://www.googleapis.com/youtube/v3/videos"
 
+# Search tuning. The defaults exist because ordering purely by upload date
+# returned near-zero-view auto-generated bulletins and unrelated talk-show clips.
+YOUTUBE_SEARCH_ORDER = os.getenv("YOUTUBE_SEARCH_ORDER", "relevance")
+YOUTUBE_RELEVANCE_LANGUAGE = os.getenv("YOUTUBE_RELEVANCE_LANGUAGE", "en")
+YOUTUBE_LOOKBACK_DAYS = max(1, int(os.getenv("YOUTUBE_LOOKBACK_DAYS", "7") or 7))
+# A video nobody has watched is rarely worth summarising for a subscriber.
+YOUTUBE_MIN_VIEWS = max(0, int(os.getenv("YOUTUBE_MIN_VIEWS", "500") or 0))
+
 
 class SearchAgent:
     def __init__(self, top_n: int = 5):
@@ -35,10 +43,15 @@ class SearchAgent:
             "part": "snippet",
             "q": query,
             "type": "video",
-            "order": "date",
-            "maxResults": min(self.top_n + 5, 25),
+            # `date` returns the newest uploads regardless of quality, which in
+            # practice surfaced auto-generated bulletins and off-topic clips.
+            # `publishedAfter` already bounds recency, so rank by relevance
+            # inside that window instead.
+            "order": YOUTUBE_SEARCH_ORDER,
+            "relevanceLanguage": YOUTUBE_RELEVANCE_LANGUAGE,
+            "maxResults": min(self.top_n + 15, 25),
             "publishedAfter": (
-                datetime.now(timezone.utc) - timedelta(days=7)
+                datetime.now(timezone.utc) - timedelta(days=YOUTUBE_LOOKBACK_DAYS)
             ).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "videoDuration": "medium",  # 4–20 min
             "key": self.api_key,
@@ -78,6 +91,10 @@ class SearchAgent:
             if duration_sec < 180:
                 continue
 
+            views = int(detail.get("views", 0) or 0)
+            if YOUTUBE_MIN_VIEWS and views < YOUTUBE_MIN_VIEWS:
+                continue
+
             published_raw = snippet.get("publishedAt", "")
             try:
                 pub_date = datetime.strptime(
@@ -93,10 +110,12 @@ class SearchAgent:
                 "channel": snippet.get("channelTitle", ""),
                 "channel_id": snippet.get("channelId", ""),
                 "published_at": pub_date,
-                "views": detail.get("views", 0),
+                "views": views,
                 "description": snippet.get("description", ""),
             })
 
+        # Most-watched first, so the top_n cut keeps the strongest candidates.
+        candidates.sort(key=lambda c: c["views"], reverse=True)
         return candidates[: self.top_n]
 
     def _fetch_video_details(

@@ -297,6 +297,11 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 | `CURATOR_MAX_CANDIDATES` | `60` | Max digests ranked per subscriber (bounds Groq spend) |
 | `KEYWORD_MAX_TERMS` | `25` | Max distinct keyword lanes ingested per run (0 disables) |
 | `KEYWORD_MAX_ARTICLES` | `15` | Max articles kept per keyword per run |
+| `YOUTUBE_API_KEY` | – | YouTube Data API v3 key. Without it search falls back to channel RSS, which CI runners are usually throttled out of. |
+| `YOUTUBE_SEARCH_ORDER` | `relevance` | `date` returns newest-regardless-of-quality; `publishedAfter` already bounds recency |
+| `YOUTUBE_MIN_VIEWS` | `500` | Drop near-zero-view auto-generated uploads |
+| `YOUTUBE_RELEVANCE_LANGUAGE` | `en` | Bias search results to English |
+| `YOUTUBE_LOOKBACK_DAYS` | `7` | Search window |
 | `YT_TRANSCRIPT_TIMEOUT` | `20` | Per-request timeout (s) for YouTube transcript fetches |
 | `YT_TRANSCRIPT_RETRIES` | `2` | Webshare `retries_when_blocked` for transcripts |
 | `DISABLE_SCRAPER_PROXY` | – | `true` skips Webshare and fetches feeds directly |
@@ -421,6 +426,7 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_personalization.py` | Keyword slot reserve, topic interleaving, and `UserSnapshot` surviving a session reconnect (the zero-email regression) |
 | `test_alerts.py` | Which run shapes count as incidents vs quiet days, and that alerting never raises |
 | `test_curator_resilience.py` | `json_validate_failed` detection, split-recovery, and that a failed chunk never costs the whole email |
+| `test_youtube_search.py` | View-count filtering, ordering, shorts exclusion, and graceful API failure |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads
