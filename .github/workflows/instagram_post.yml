@@ -17,20 +17,25 @@ on:
     - cron: "30 4 * * *"
     - cron: "0 11 * * *"
 
+concurrency:
+  group: instagram-post
+  cancel-in-progress: false
+
 jobs:
   instagram-post:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install uv (Fast Package Manager)
-        uses: astral-sh/setup-uv@v1
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
         run: uv pip install -r requirements.txt --system
@@ -42,6 +47,7 @@ jobs:
           GROQ_API_KEY2: ${{ secrets.GROQ_API_KEY2 }}
           WEBSHARE_USERNAME: ${{ secrets.WEBSHARE_USERNAME }}
           WEBSHARE_PASSWORD: ${{ secrets.WEBSHARE_PASSWORD }}
+          DISABLE_SCRAPER_PROXY: ${{ vars.DISABLE_SCRAPER_PROXY }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           INSTAGRAM_BUSINESS_ID: ${{ secrets.INSTAGRAM_BUSINESS_ID }}
           META_GRAPH_MEDIA_BASE: ${{ secrets.META_GRAPH_MEDIA_BASE }}

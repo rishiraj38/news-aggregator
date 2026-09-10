@@ -12,7 +12,10 @@ from .base import BaseAgent
 logger = logging.getLogger(__name__)
 
 # Groq on-demand tier TPM can reject a single giant completion; tune via env / split below.
-CURATOR_CHUNK_SIZE = max(1, int(os.getenv("CURATOR_CHUNK_SIZE", "6")))
+# 6 meant ~23 Groq calls for a single subscriber, which spent most of the run
+# in 429 backoff. The recursive TPM split below already handles oversized
+# batches, so a larger default is safe and roughly halves the request count.
+CURATOR_CHUNK_SIZE = max(1, int(os.getenv("CURATOR_CHUNK_SIZE", "12")))
 CURATOR_DIGEST_SUMMARY_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_SUMMARY_CHARS", "260")))
 CURATOR_DIGEST_TITLE_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_TITLE_CHARS", "200")))
 GROQ_CHUNK_SLEEP_SECONDS = float(os.getenv("GROQ_CHUNK_SLEEP_SECONDS", "10") or 0)

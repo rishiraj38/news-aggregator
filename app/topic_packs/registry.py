@@ -29,6 +29,7 @@ RSS_TOPIC_FEED_SCRAPERS: List[dict[str, Any]] = [
             "https://feeds.bbci.co.uk/news/world/rss.xml",
             "https://feeds.bbci.co.uk/news/politics/rss.xml",
             "https://www.theguardian.com/world/rss",
+            "https://www.theguardian.com/politics/rss",
         ],
     },
     {
@@ -41,7 +42,33 @@ RSS_TOPIC_FEED_SCRAPERS: List[dict[str, Any]] = [
         "registry_name": "topic_cricket_bbccricket",
         "source_key": "topic_cricket_bbccricket",
         "topic_id": "cricket",
-        "rss_urls": ["https://feeds.bbci.co.uk/sport/cricket/rss.xml"],
+        "rss_urls": [
+            "https://feeds.bbci.co.uk/sport/cricket/rss.xml",
+            "https://www.espncricinfo.com/rss/content/story/feeds/0.xml",
+        ],
+    },
+    {
+        # Broad tech/AI coverage beyond the four core lab + trade-press scrapers,
+        # so a technology-only subscriber always has candidates to rank.
+        "registry_name": "topic_tech_general",
+        "source_key": "topic_tech_general",
+        "topic_id": "technology",
+        "rss_urls": [
+            "https://feeds.bbci.co.uk/news/technology/rss.xml",
+            "https://www.theguardian.com/technology/rss",
+            "https://feeds.arstechnica.com/arstechnica/technology-lab",
+            "https://www.wired.com/feed/tag/ai/latest/rss",
+            "https://www.technologyreview.com/feed/",
+        ],
+    },
+    {
+        "registry_name": "topic_tech_research",
+        "source_key": "topic_tech_research",
+        "topic_id": "technology",
+        "rss_urls": [
+            "https://deepmind.google/blog/rss.xml",
+            "https://huggingface.co/blog/feed.xml",
+        ],
     },
 ]
 

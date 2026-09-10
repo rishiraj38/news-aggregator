@@ -9,7 +9,10 @@ class TechCrunchArticle(Article):
 class TechCrunchScraper(BaseScraper):
     @property
     def rss_urls(self) -> List[str]:
-        return ["https://techcrunch.com/category/artificial-intelligence/feed/"]
+        return [
+            "https://techcrunch.com/category/artificial-intelligence/feed/",
+            "https://techcrunch.com/feed/",
+        ]
 
     def get_articles(self, hours: int = 24) -> List[TechCrunchArticle]:
         return [

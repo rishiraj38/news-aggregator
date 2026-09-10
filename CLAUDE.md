@@ -30,9 +30,9 @@ main.py / app/daily_runner.py          ← Entry point (GitHub Actions cron)
 │   ├── YouTubeScraper                 (yt-dlp search + transcript API)
 │   ├── OpenAIScraper                  (RSS: openai.com/blog)
 │   ├── AnthropicScraper               (RSS: anthropic.com)
-│   ├── TechCrunchScraper              (RSS)
-│   ├── TheVergeScraper                (RSS)
-│   └── ConfigurableRSSScraper         (topic packs: BBC News/Sport/Cricket)
+│   ├── TechCrunchScraper              (RSS: AI category + main feed)
+│   ├── TheVergeScraper                (RSS: main index — the AI feed is empty)
+│   └── ConfigurableRSSScraper         (topic packs, 15 feeds across 5 packs)
 │
 ├─ [2/5] Anthropic markdown processing ── app/services/process_anthropic.py
 ├─ [3/5] YouTube transcript processing ── app/services/process_youtube.py
@@ -213,6 +213,15 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 
 ### Topic Packs (`app/topic_packs/`)
 - `registry.py`: defines `ALLOWED_TOPIC_IDS` = technology, politics, sports, cricket
+- Five packs feed `general_rss_articles.source`:
+  | Pack | Topic | Feeds |
+  |------|-------|-------|
+  | `topic_pol_bbcpolitics` | politics | BBC News/World/Politics, Guardian World + Politics |
+  | `topic_sport_bbcsport` | sports | BBC Sport |
+  | `topic_cricket_bbccricket` | cricket | BBC Cricket, ESPNcricinfo |
+  | `topic_tech_general` | technology | BBC Tech, Guardian Tech, Ars Technica, Wired AI, MIT Tech Review |
+  | `topic_tech_research` | technology | DeepMind blog, Hugging Face blog |
+- The two tech packs exist so `['technology']`-only subscribers always have candidates; the four core scrapers alone were too thin to survive topic filtering.
 - Maps `article_type` → topic via `_SOURCE_TOPIC` dict
 - `digest_matches_topics()` gates which digests reach which users
 - `diversify.py`: ensures the final top-N email isn't all one topic
@@ -257,7 +266,13 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 | `GROQ_API_KEY2` | – | Secondary key for rate-limit rotation |
 | `DIGEST_BATCH_LIMIT` | `50` | Max articles to digest per pipeline run |
 | `DIGEST_EMAIL_TEST_ONLY` | – | Restrict email to single address |
-| `CURATOR_CHUNK_SIZE` | `6` | Digests per Groq batch |
+| `CURATOR_CHUNK_SIZE` | `12` | Digests per Groq batch |
+| `CURATOR_MAX_CANDIDATES` | `60` | Max digests ranked per subscriber (bounds Groq spend) |
+| `DISABLE_SCRAPER_PROXY` | – | `true` skips Webshare and fetches feeds directly |
+| `PIPELINE_HOURS` | `72` | Look-back window for `python -m app.daily_runner` |
+| `PIPELINE_TOP_N` | `10` | Articles per subscriber email |
+| `PIPELINE_FORCE_SCRAPE` | – | `true` ignores the 60-min `.last_scrape` cooldown |
+| `FAIL_ON_ZERO_EMAILS` | `true` | Exit non-zero when subscribers were processed but nothing sent |
 | `GROQ_CHUNK_SLEEP_SECONDS` | `10` | Sleep between curator batches |
 | `GROQ_AFTER_KEY_ROTATE_SLEEP` | `2` | Pause after key failover |
 | `HELIX_WEBSITE_URL` | – | Newsletter footer link |
@@ -284,7 +299,11 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 ### `daily_digest.yml`
 - **Schedule**: 10:30 UTC daily (4:00 PM IST)
 - **Runs**: `python -m app.daily_runner`
-- **Secrets needed**: `DATABASE_URL`, `GROQ_API_KEY`, `GROQ_API_KEY2`, `MY_EMAIL`, `APP_PASSWORD`
+- **Secrets needed**: `DATABASE_URL`, `GROQ_API_KEY`, `GROQ_API_KEY2`, `MY_EMAIL`, `APP_PASSWORD`; optional `YOUTUBE_API_KEY`, `WEBSHARE_*`
+- `timeout-minutes: 45` + a `daily-digest` concurrency group (a hung Groq/YouTube retry used to be able to run for hours)
+- `workflow_dispatch` accepts `hours`, `top_n`, `fail_on_zero_emails`
+- Writes a job summary with per-source scrape counts, and emits `::warning` annotations when nothing was scraped or nothing was sent
+- No `.last_scrape` cache step — restoring it silently skipped scraping on manual re-runs; `PIPELINE_FORCE_SCRAPE=true` is set instead
 
 ### `instagram_post.yml`
 - **Schedule**: 2× daily — 04:30 UTC (10:00 AM IST) + 11:00 UTC (4:30 PM IST)
@@ -299,33 +318,39 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 
 ## Common Gotchas
 
-1. **Model deprecation**: Groq retires models periodically. If you see `model_not_found`, query `GET https://api.groq.com/openai/v1/models` and update all 3 agents (`digest_agent.py`, `curator_agent.py`, `email_agent.py`).
+1. **Scraper proxy is best-effort, not required**: `app/scrapers/base.py` routes RSS through Webshare only when `WEBSHARE_USERNAME`/`WEBSHARE_PASSWORD` are set. When the proxy refuses connections it logs once and falls back to direct fetches for the rest of the run. Historically an expired Webshare plan made every feed raise `ProxyError`, so all 12 endpoints were skipped and the pipeline "succeeded" having scraped nothing but YouTube. Set `DISABLE_SCRAPER_PROXY=true` to skip the proxy entirely.
 
-2. **DigestAgent prompt must be topic-agnostic**: The prompt handles tech, sports, politics, cricket. If it says "AI news analyst", the model refuses non-AI articles with `json_validate_failed` → `"I can only create digests for AI-related content"`. Always keep the prompt generic across all topics.
+2. **Never pass ORM `User` objects across pipeline stages**: `Repository._reconnect()` swaps in a fresh session on SSL drops, detaching every object loaded from the old one — after which even `user.email` raises `DetachedInstanceError`. Stage 5 uses `repo.get_active_user_snapshots()` → `UserSnapshot` (plain dataclass) instead. Flag writes go through `repo.set_user_flag(user_id, field)`, which re-reads the row in the live session. Regression symptom: `Could not read user attributes — skipping` repeated per user and `Emails Sent: 0`.
 
-3. **Digest `created_at` must be current time**: `repository.py:create_digest()` must use `datetime.now(timezone.utc)` for `created_at`, NOT the article's `published_at`. Step 5 filters by `get_recent_digests(hours=24)` — if `created_at` matches a 3-day-old article, it falls outside the window → "No digests available to rank".
+3. **Digest batches are source-balanced**: `get_articles_without_digest()` sorts each source newest-first and round-robins across sources before applying `limit`. Plain concatenation used to let one noisy backlog (BBC Sport) consume all 50 slots, so `['technology']` subscribers matched 0 digests and got no email.
 
-4. **YouTube scraping timeouts**: YouTube aggressively throttles. The scraper retries 10× per video with no timeout cap, which can stall the pipeline for 30+ minutes. Consider adding explicit timeouts.
+4. **Model deprecation**: Groq retires models periodically. If you see `model_not_found`, query `GET https://api.groq.com/openai/v1/models` and update all 3 agents (`digest_agent.py`, `curator_agent.py`, `email_agent.py`).
 
-5. **413 TPM errors from Groq**: The curator splits chunks on 413 but digest_agent doesn't. If single articles are too large, the 8000-char truncation in `digest_agent.py:31` is the safeguard.
+5. **DigestAgent prompt must be topic-agnostic**: The prompt handles tech, sports, politics, cricket. If it says "AI news analyst", the model refuses non-AI articles with `json_validate_failed` → `"I can only create digests for AI-related content"`. Always keep the prompt generic across all topics.
 
-6. **Boolean columns are strings**: `user.is_active` is `"true"` not `True`. Always compare with `str(...).lower() != "true"`.
+6. **Digest `created_at` must be current time**: `repository.py:create_digest()` must use `datetime.now(timezone.utc)` for `created_at`, NOT the article's `published_at`. Step 5 filters by `get_recent_digests(hours=24)` — if `created_at` matches a 3-day-old article, it falls outside the window → "No digests available to rank".
 
-7. **No alembic migrations**: Schema changes use `schema_migrations.py` (additive ALTER TABLE only). New columns must handle NULL for existing rows.
+7. **YouTube scraping timeouts**: YouTube aggressively throttles. The scraper retries 10× per video with no timeout cap, which can stall the pipeline for 30+ minutes. Consider adding explicit timeouts.
 
-8. **Env file loading order**: `app/.env` is loaded first, then root `.env`. Put secrets in `app/.env` locally.
+8. **413 TPM errors from Groq**: The curator splits chunks on 413 but digest_agent doesn't. If single articles are too large, the 8000-char truncation in `digest_agent.py:31` is the safeguard.
 
-9. **Digest IDs**: Format is `"{article_type}:{article_id}"`, but curator output sometimes includes quotes/whitespace. `_normalize_curator_digest_id()` in `publish_instagram_card.py` handles cleanup.
+9. **Boolean columns are strings**: `user.is_active` is `"true"` not `True`. Always compare with `str(...).lower() != "true"`.
 
-10. **Topic filtering**: Unknown `article_type` values pass through `digest_matches_topics()` (returns True). This is intentional — prevents silently dropping articles after migrations. Users with only `['technology']` topics will get 0 matches if the batch was all sports/politics — increase `DIGEST_BATCH_LIMIT` for topic diversity.
+10. **No alembic migrations**: Schema changes use `schema_migrations.py` (additive ALTER TABLE only). New columns must handle NULL for existing rows.
 
-11. **BBC thumbnail blurriness**: BBC RSS feeds serve thumbnails at 240px. `thumbnail_resolve.py` auto-upgrades to 1024px via path/query rewriting. If images still look blurry, check the source URL is hitting the `_BBC_PATH_WIDTH_RE` regex.
+11. **Env file loading order**: `app/.env` is loaded first, then root `.env`. Put secrets in `app/.env` locally.
 
-12. **Meta access token expiration**: Instagram Graph API tokens expire when the user changes their Facebook password or Meta invalidates sessions. Error: `OAuthException code 190`. Fix: regenerate in Meta Developer Dashboard → Products → Instagram → API Setup → Generate token. Update `META_ACCESS_TOKEN` in GitHub Secrets.
+12. **Digest IDs**: Format is `"{article_type}:{article_id}"`, but curator output sometimes includes quotes/whitespace. `_normalize_curator_digest_id()` in `publish_instagram_card.py` handles cleanup.
 
-13. **Gmail App Password expiration**: SMTP error `535 5.7.8 Username and Password not accepted` means the `APP_PASSWORD` is invalid. Regenerate at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) and update GitHub Secret.
+13. **Topic filtering**: Unknown `article_type` values pass through `digest_matches_topics()` (returns True). This is intentional — prevents silently dropping articles after migrations. Users with only `['technology']` topics will get 0 matches if the batch was all sports/politics — increase `DIGEST_BATCH_LIMIT` for topic diversity.
 
-14. **Trial system**: 27-day trial with warnings at 2 days and 1 day remaining. Admins (`role="admin"`) are exempt. Expiration flags stored as string booleans.
+14. **BBC thumbnail blurriness**: BBC RSS feeds serve thumbnails at 240px. `thumbnail_resolve.py` auto-upgrades to 1024px via path/query rewriting. If images still look blurry, check the source URL is hitting the `_BBC_PATH_WIDTH_RE` regex.
+
+15. **Meta access token expiration**: Instagram Graph API tokens expire when the user changes their Facebook password or Meta invalidates sessions. Error: `OAuthException code 190`. Fix: regenerate in Meta Developer Dashboard → Products → Instagram → API Setup → Generate token. Update `META_ACCESS_TOKEN` in GitHub Secrets.
+
+16. **Gmail App Password expiration**: SMTP error `535 5.7.8 Username and Password not accepted` means the `APP_PASSWORD` is invalid. Regenerate at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) and update GitHub Secret.
+
+17. **Trial system**: 27-day trial with warnings at 2 days and 1 day remaining. Admins (`role="admin"`) are exempt. Expiration flags stored as string booleans.
 
 ---
 

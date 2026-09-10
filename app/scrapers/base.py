@@ -37,8 +37,24 @@ def rss_entry_thumbnail_url(entry, link: str) -> Optional[str]:
     return None
 
 
+_RSS_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; HelixNewsCurator/1.0; "
+        "+https://helix-seven-eta.vercel.app)"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+}
+
+
+def _env_flag(name: str) -> bool:
+    return str(os.getenv(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def get_proxy_handler():
-    """Return a proxies dict for ``requests.get(proxies=…)``."""
+    """Return a proxies dict for ``requests.get(proxies=…)``, or None for direct."""
+    if _env_flag("DISABLE_SCRAPER_PROXY"):
+        return None
+
     proxy_username = os.getenv("WEBSHARE_USERNAME")
     proxy_password = os.getenv("WEBSHARE_PASSWORD")
 
@@ -49,13 +65,48 @@ def get_proxy_handler():
     return {"http": proxy_url, "https": proxy_url}
 
 
-_RSS_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (compatible; HelixNewsCurator/1.0; "
-        "+https://helix-seven-eta.vercel.app)"
-    ),
-    "Accept": "application/rss+xml, application/xml, text/xml, */*",
-}
+# Set once the Webshare endpoint proves unreachable, so the remaining feeds in
+# this process go straight out instead of paying the proxy timeout every time.
+_proxy_disabled_this_run = False
+
+
+def _is_proxy_failure(exc: BaseException) -> bool:
+    if isinstance(exc, requests.exceptions.ProxyError):
+        return True
+    return "proxy" in str(exc).lower()
+
+
+def fetch_feed_bytes(rss_url: str, timeout: int = 30) -> bytes:
+    """GET a feed, falling back to a direct connection when the proxy is down.
+
+    The Webshare proxy silently expiring used to take the whole ingest with it:
+    every RSS endpoint raised ProxyError, was logged as a skip, and the pipeline
+    reported success while scraping nothing. The proxy is now best-effort only.
+    """
+    global _proxy_disabled_this_run
+
+    proxies = None if _proxy_disabled_this_run else get_proxy_handler()
+
+    if proxies:
+        try:
+            response = requests.get(
+                rss_url, headers=_RSS_HEADERS, proxies=proxies, timeout=timeout
+            )
+            response.raise_for_status()
+            return response.content
+        except Exception as exc:
+            if not _is_proxy_failure(exc):
+                raise
+            _proxy_disabled_this_run = True
+            _logger.warning(
+                "Proxy unreachable (%s) — falling back to direct connections for "
+                "the rest of this run.",
+                str(exc).split("(Caused by")[0].strip(),
+            )
+
+    response = requests.get(rss_url, headers=_RSS_HEADERS, timeout=timeout)
+    response.raise_for_status()
+    return response.content
 
 
 def extract_feed_entry_image_url(entry) -> Optional[str]:
@@ -151,26 +202,24 @@ class BaseScraper(ABC):
         articles = []
         seen_guids = set()
 
-        proxy_handler = get_proxy_handler()
-
         for rss_url in self.rss_urls:
             try:
                 # Always use requests so we can send a proper User-Agent
                 # (some feeds 403 bare urllib / feedparser user-agents)
-                response = requests.get(
-                    rss_url,
-                    headers=_RSS_HEADERS,
-                    proxies=proxy_handler,  # None is fine — requests ignores it
-                    timeout=30,
-                )
-                response.raise_for_status()
-                feed = feedparser.parse(response.content)
+                feed = feedparser.parse(fetch_feed_bytes(rss_url))
 
                 if not feed.entries:
+                    _logger.warning("RSS endpoint returned no entries: %s", rss_url)
                     continue
 
+                before = len(articles)
+
                 for entry in feed.entries:
-                    published_parsed = getattr(entry, "published_parsed", None)
+                    # Atom feeds often publish only <updated>; falling back keeps
+                    # those entries from being silently dropped.
+                    published_parsed = entry.get("published_parsed") or entry.get(
+                        "updated_parsed"
+                    )
                     if not published_parsed:
                         continue
 
@@ -193,6 +242,13 @@ class BaseScraper(ABC):
                                     image_url=rss_entry_thumbnail_url(entry, link),
                                 )
                             )
+                _logger.info(
+                    "RSS %s → %d entries, %d within %dh window",
+                    rss_url,
+                    len(feed.entries),
+                    len(articles) - before,
+                    hours,
+                )
             except Exception as exc:
                 _logger.warning("Skipping RSS endpoint %s: %s", rss_url, exc)
                 continue

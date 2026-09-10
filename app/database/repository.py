@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Callable, TypeVar
 import logging
@@ -9,6 +10,50 @@ from .connection import get_session
 _logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+@dataclass
+class UserSnapshot:
+    """Session-independent copy of a :class:`User` row.
+
+    The pipeline reconnects to Postgres when Render drops the SSL link
+    mid-run, which detaches every ORM object loaded from the old session and
+    makes even ``user.email`` raise ``DetachedInstanceError``. Passing these
+    plain snapshots around instead keeps personalization and email sending
+    alive across a reconnect.
+    """
+
+    id: str
+    email: str
+    name: str
+    role: Optional[str]
+    title: Optional[str]
+    expertise_level: Optional[str]
+    preferences: Optional[str]
+    created_at: Optional[datetime]
+    subscription_status: Optional[str]
+    admin_welcome_sent: Optional[str]
+    trial_warning_1_sent: Optional[str]
+    trial_warning_2_sent: Optional[str]
+    trial_expired_sent: Optional[str]
+
+    @classmethod
+    def from_user(cls, user: User) -> "UserSnapshot":
+        return cls(
+            id=user.id,
+            email=user.email,
+            name=user.name,
+            role=getattr(user, "role", None),
+            title=getattr(user, "title", None),
+            expertise_level=getattr(user, "expertise_level", None),
+            preferences=getattr(user, "preferences", None),
+            created_at=getattr(user, "created_at", None),
+            subscription_status=getattr(user, "subscription_status", None),
+            admin_welcome_sent=getattr(user, "admin_welcome_sent", None),
+            trial_warning_1_sent=getattr(user, "trial_warning_1_sent", None),
+            trial_warning_2_sent=getattr(user, "trial_warning_2_sent", None),
+            trial_expired_sent=getattr(user, "trial_expired_sent", None),
+        )
 
 
 class Repository:
@@ -254,15 +299,58 @@ class Repository:
             return True
         return False
 
+    @staticmethod
+    def _recency_key(published_at: Optional[datetime]) -> datetime:
+        """Sortable UTC key; undated rows sink to the bottom."""
+        if published_at is None:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if published_at.tzinfo is None:
+            return published_at.replace(tzinfo=timezone.utc)
+        return published_at.astimezone(timezone.utc)
+
+    @staticmethod
+    def _interleave_by_source(
+        buckets: Dict[str, List[Dict[str, Any]]], limit: Optional[int]
+    ) -> List[Dict[str, Any]]:
+        """Round-robin across sources so no single feed can monopolise the batch.
+
+        Previously the candidate lists were simply concatenated and sliced, so a
+        large backlog from one noisy feed (BBC Sport) consumed every digest slot
+        and topic-filtered subscribers ended up with zero matches.
+        """
+        ordered_sources = sorted(
+            buckets.keys(), key=lambda s: len(buckets[s]), reverse=True
+        )
+        out: List[Dict[str, Any]] = []
+        cursor = 0
+        while True:
+            drained = True
+            for source in ordered_sources:
+                items = buckets[source]
+                if cursor < len(items):
+                    drained = False
+                    out.append(items[cursor])
+                    if limit and len(out) >= limit:
+                        return out
+            if drained:
+                return out
+            cursor += 1
+
     def get_articles_without_digest(
         self, limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        articles = []
-        seen_ids = set()
+        """Newest-first, source-balanced pool of articles that still need a digest."""
+        seen_ids = {
+            f"{article_type}:{article_id}"
+            for article_type, article_id in self.session.query(
+                Digest.article_type, Digest.article_id
+            ).all()
+        }
 
-        digests = self.session.query(Digest).all()
-        for d in digests:
-            seen_ids.add(f"{d.article_type}:{d.article_id}")
+        buckets: Dict[str, List[Dict[str, Any]]] = {}
+
+        def add(entry: Dict[str, Any]) -> None:
+            buckets.setdefault(entry["type"], []).append(entry)
 
         youtube_videos = (
             self.session.query(YouTubeVideo)
@@ -278,7 +366,7 @@ class Repository:
                 thumb = getattr(video, "image_url", None) or (
                     f"https://i.ytimg.com/vi/{video.video_id}/hqdefault.jpg"
                 )
-                articles.append(
+                add(
                     {
                         "type": "youtube",
                         "id": video.video_id,
@@ -294,7 +382,7 @@ class Repository:
         for article in openai_articles:
             key = f"openai:{article.guid}"
             if key not in seen_ids:
-                articles.append(
+                add(
                     {
                         "type": "openai",
                         "id": article.guid,
@@ -314,7 +402,7 @@ class Repository:
         for article in anthropic_articles:
             key = f"anthropic:{article.guid}"
             if key not in seen_ids:
-                articles.append(
+                add(
                     {
                         "type": "anthropic",
                         "id": article.guid,
@@ -326,12 +414,12 @@ class Repository:
                     }
                 )
 
-        # General RSS Articles
+        # General RSS Articles (TechCrunch, The Verge, topic packs)
         general_articles = self.session.query(GeneralRSSArticle).all()
         for article in general_articles:
             key = f"{article.source}:{article.guid}"
             if key not in seen_ids:
-                articles.append(
+                add(
                     {
                         "type": article.source,
                         "id": article.guid,
@@ -343,10 +431,21 @@ class Repository:
                     }
                 )
 
-        if limit:
-            articles = articles[:limit]
+        # Freshest story from each source wins its slot.
+        for items in buckets.values():
+            items.sort(key=lambda a: self._recency_key(a.get("published_at")), reverse=True)
 
-        return articles
+        selected = self._interleave_by_source(buckets, limit)
+
+        if buckets:
+            _logger.info(
+                "Digest candidates by source: %s → selected %d (limit=%s)",
+                {k: len(v) for k, v in sorted(buckets.items())},
+                len(selected),
+                limit,
+            )
+
+        return selected
 
     def create_digest(
         self,
@@ -478,6 +577,42 @@ class Repository:
             lambda: self.session.query(User).filter(User.is_active == "true").all()
         )
 
+    def get_active_user_snapshots(self) -> List["UserSnapshot"]:
+        """Active users as detached-safe snapshots.
+
+        Read every attribute while the rows are still bound to a live session so
+        a later reconnect can never turn ``user.email`` into a lazy-load error.
+        """
+        def _do() -> List["UserSnapshot"]:
+            rows = self.session.query(User).filter(User.is_active == "true").all()
+            return [UserSnapshot.from_user(u) for u in rows]
+
+        return self._safe_execute(_do)
+
+    _USER_FLAG_FIELDS = frozenset(
+        {
+            "admin_welcome_sent",
+            "trial_warning_1_sent",
+            "trial_warning_2_sent",
+            "trial_expired_sent",
+        }
+    )
+
+    def set_user_flag(self, user_id: str, field: str, value: str = "true") -> bool:
+        """Write one string-boolean flag by id, re-reading the row in the live session."""
+        if field not in self._USER_FLAG_FIELDS:
+            raise ValueError(f"Refusing to set unknown user flag: {field}")
+
+        def _do() -> bool:
+            user = self.session.query(User).filter_by(id=user_id).first()
+            if not user:
+                return False
+            setattr(user, field, value)
+            self.session.commit()
+            return True
+
+        return self._safe_execute(_do)
+
     def update_user_preferences(self, user_id: str, new_preferences: str) -> bool:
         user = self.session.query(User).filter_by(id=user_id).first()
         if user:
@@ -485,20 +620,18 @@ class Repository:
             self.session.commit()
             return True
     def update_user_status(self, user_id: str, status: str) -> bool:
-        user = self.session.query(User).filter_by(id=user_id).first()
-        if user:
+        def _do() -> bool:
+            user = self.session.query(User).filter_by(id=user_id).first()
+            if not user:
+                return False
             user.subscription_status = status
             self.session.commit()
             return True
-        return False
+
+        return self._safe_execute(_do)
 
     def update_user_admin_welcome(self, user_id: str) -> bool:
-        user = self.session.query(User).filter_by(id=user_id).first()
-        if user:
-            user.admin_welcome_sent = "true"
-            self.session.commit()
-            return True
-        return False
+        return self.set_user_flag(user_id, "admin_welcome_sent", "true")
 
     # Recommendation Methods
     def create_recommendation(

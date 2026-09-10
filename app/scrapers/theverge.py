@@ -9,7 +9,12 @@ class TheVergeArticle(Article):
 class TheVergeScraper(BaseScraper):
     @property
     def rss_urls(self) -> List[str]:
-        return ["https://www.theverge.com/rss/artificial-intelligence/index.xml"]
+        # The /artificial-intelligence/ feed still resolves but has published no
+        # entries for months; the main index feed is the live one.
+        return [
+            "https://www.theverge.com/rss/index.xml",
+            "https://www.theverge.com/rss/artificial-intelligence/index.xml",
+        ]
 
     def get_articles(self, hours: int = 24) -> List[TheVergeArticle]:
         return [

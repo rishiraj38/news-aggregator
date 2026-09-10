@@ -1,3 +1,4 @@
+import logging
 from typing import List, Callable, Any
 
 from app.topic_packs.registry import RSS_TOPIC_FEED_SCRAPERS
@@ -8,6 +9,8 @@ from .scrapers.anthropic import AnthropicScraper
 from .scrapers.techcrunch import TechCrunchScraper
 from .scrapers.theverge import TheVergeScraper
 from .database.repository import Repository
+
+logger = logging.getLogger(__name__)
 
 
 def _save_youtube_videos(
@@ -144,8 +147,16 @@ def run_scrapers(hours: int = 24) -> dict:
         try:
             items = save_func(scraper, repo, hours)
             results[name] = items
-        except Exception:
+            logger.info("Scraper %s → %d item(s)", name, len(items) if items else 0)
+        except Exception as exc:
+            # Previously swallowed silently, so a broken source looked identical
+            # to a quiet one and the run still reported success.
+            logger.error("Scraper %s failed: %s", name, exc, exc_info=True)
             results[name] = []
+
+    empty = [n for n, v in results.items() if not v]
+    if empty:
+        logger.warning("Scrapers returning nothing this run: %s", ", ".join(sorted(empty)))
 
     return results
 

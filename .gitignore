@@ -105,3 +105,6 @@ INTERVIEW_GUIDE.md
 INTERVIEW_GUIDE.md
 LINKEDIN_DRAFT.md
 RESUME_POINTS.md
+
+# Local scrape cooldown marker (created at runtime)
+.last_scrape
