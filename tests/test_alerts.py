@@ -67,6 +67,15 @@ def test_explicit_error_is_reported():
     assert any("boom" in p for p in problems)
 
 
+def test_cached_scrape_is_not_an_ingest_failure():
+    """A cached run reports {"status": "cached"} and no per-source counts.
+
+    Treating that as "every source returned 0" cried wolf on any re-run inside
+    the scrape cooldown.
+    """
+    assert alerts.detect_pipeline_problems(_results(scraping={"status": "cached"})) == []
+
+
 def test_missing_scraping_key_does_not_crash():
     assert alerts.detect_pipeline_problems({"user_digests": 0, "emails_sent": 0}) == []
 

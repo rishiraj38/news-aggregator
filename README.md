@@ -14,33 +14,186 @@ GitHub Actions cron, with a Next.js dashboard where subscribers pick what they w
 
 ---
 
-## What it actually does
+## How it works
 
-```
-GitHub Actions cron (10:30 UTC)
-│
-├─ [1] Ingest ────────── 13 sources in parallel lanes
-│    ├─ Labs & press     OpenAI · Anthropic · TechCrunch · The Verge
-│    ├─ Topic bundles    technology · startups · politics · sports · cricket
-│    ├─ Keyword lanes    one per subscriber-defined term (Google News + Hacker News)
-│    └─ YouTube          Data API v3 search → transcript extraction
-│
-├─ [2] Digest ────────── LLM writes a title + summary per article
-│    └─ Candidates are recency-sorted and round-robined across sources,
-│       so no single feed can monopolise the batch
-│
-├─ [3] Curate ────────── LLM ranks digests 0–10 against each subscriber profile
-│    └─ Chunked, TPM-aware, and degrades to neutral scores rather than
-│       dropping a subscriber's whole email when a batch fails
-│
-├─ [4] Deliver ───────── Personalised HTML email over SMTP
-│    └─ Diversified across topic lanes, with a reserved share for keyword hits
-│
-└─ [5] Publish ───────── Top unposted story → 1080×1350 card → Instagram Graph API
+### The whole pipeline
+
+```mermaid
+flowchart TD
+    CRON(["GitHub Actions cron · 10:30 UTC daily"]) --> ING
+
+    ING["<b>1 · INGEST</b><br/>13 lanes fetched in sequence<br/><i>labs · topic bundles · keyword lanes · YouTube</i>"]
+    ING -->|"~400 articles/day"| DBA[("articles")]
+
+    DBA --> SEL["<b>2 · SELECT</b><br/><i>NOT EXISTS anti-join, newest-first,<br/>round-robin across sources</i>"]
+    SEL -->|"60 balanced candidates"| DGA["<b>DigestAgent</b> · LLM<br/><i>article to title + summary</i>"]
+    DGA --> DBD[("digests")]
+
+    DBD --> CUR
+
+    subgraph CUR["3 · CURATE — repeated per subscriber"]
+        direction LR
+        C1["Filter by<br/>topics + keywords"] --> C2["<b>CuratorAgent</b> · LLM<br/><i>score 0-10</i>"] --> C3["Diversify<br/><i>interleave lanes,<br/>reserve keyword slots</i>"]
+    end
+
+    CUR --> MAIL["Personalised HTML email<br/>via SMTP"]
+    CUR -.->|"run looks broken"| AL["Operational alert<br/>+ non-zero exit"]
+
+    DBD --> PUB["<b>4 · PUBLISH</b><br/><i>top unposted story to<br/>1080x1350 card</i>"]
+    PUB --> IG["Instagram<br/>Graph API"]
+
+    WEB["Next.js dashboard<br/><i>Clerk auth · Prisma</i>"] <-->|"topics + keywords"| DBD
+
+    style CRON fill:#4f46e5,color:#fff
+    style MAIL fill:#059669,color:#fff
+    style IG fill:#db2777,color:#fff
+    style AL fill:#dc2626,color:#fff
+    style WEB fill:#0284c7,color:#fff
+    style DBA fill:#e0e7ff
+    style DBD fill:#e0e7ff
 ```
 
-If a run breaks, it says so: the pipeline emails an operational alert and exits
-non-zero rather than finishing green with nothing delivered.
+### What gets fetched, and from where
+
+```mermaid
+flowchart LR
+    subgraph SRC["Sources"]
+        direction TB
+        S1["openai.com/news/rss.xml"]
+        S2["Anthropic news · research · engineering"]
+        S3["techcrunch.com · AI + main feed"]
+        S4["theverge.com/rss/index.xml"]
+        S5["BBC News · World · Politics<br/>Guardian World · Politics"]
+        S6["BBC Sport"]
+        S7["BBC Cricket · ESPNcricinfo"]
+        S8["BBC Tech · Guardian Tech · Ars<br/>Wired AI · MIT Tech Review"]
+        S9["DeepMind blog · Hugging Face blog"]
+        S10["YC blog · HN front page<br/>HN high-score stories"]
+        S11["Google News search<br/>per subscriber keyword"]
+        S12["Hacker News Algolia<br/>per subscriber keyword"]
+        S13["YouTube Data API v3<br/>+ transcript extraction"]
+    end
+
+    S1 --> T1[("openai_articles")]
+    S2 --> T2[("anthropic_articles")]
+    S3 --> T3[("general_rss_articles<br/><i>source=techcrunch</i>")]
+    S4 --> T4[("general_rss_articles<br/><i>source=theverge</i>")]
+    S5 --> T5[("general_rss_articles<br/><i>source=topic_pol_bbcpolitics</i>")]
+    S6 --> T6[("general_rss_articles<br/><i>source=topic_sport_bbcsport</i>")]
+    S7 --> T7[("general_rss_articles<br/><i>source=topic_cricket_bbccricket</i>")]
+    S8 --> T8[("general_rss_articles<br/><i>source=topic_tech_general</i>")]
+    S9 --> T9[("general_rss_articles<br/><i>source=topic_tech_research</i>")]
+    S10 --> T10[("general_rss_articles<br/><i>source=topic_startup_ychn</i>")]
+    S11 --> T11[("general_rss_articles<br/><i>source=kw_slug_hash</i>")]
+    S12 --> T11
+    S13 --> T13[("youtube_videos")]
+```
+
+Every source writes its origin into the row. That origin becomes the digest's
+`article_type`, which is what routing and topic filtering key off later — so
+"where did this come from" survives all the way to the subscriber's inbox.
+
+### How one story reaches the right person
+
+```mermaid
+flowchart TD
+    ART["Article ingested<br/><i>article_type = topic_startup_ychn</i>"] --> DIG["Digest created<br/><i>id = article_type:article_id</i>"]
+
+    DIG --> Q{"Is it a<br/>keyword lane?<br/><i>kw_*</i>"}
+
+    Q -->|Yes| K{"Did THIS subscriber<br/>ask for that term?"}
+    Q -->|No| T{"Is its topic in the<br/>subscriber's bundles?"}
+
+    K -->|Yes| POOL["Enters ranking pool"]
+    K -->|No| DROP1["Never shown<br/><i>keyword lanes are private</i>"]
+
+    T -->|Yes| POOL
+    T -->|No| DROP2["Filtered out"]
+    T -->|"Unknown source"| POOL
+
+    POOL --> TRIM["Trim to newest N<br/><i>keyword hits kept first</i>"]
+    TRIM --> RANK["CuratorAgent scores 0-10"]
+    RANK --> DIV["Diversify"]
+
+    DIV --> R1["Reserved slots<br/>for keyword hits"]
+    DIV --> R2["Remaining slots<br/>interleaved across<br/>the subscriber's lanes"]
+
+    R1 --> MAIL["Top N in the email"]
+    R2 --> MAIL
+
+    style DROP1 fill:#dc2626,color:#fff
+    style DROP2 fill:#78716c,color:#fff
+    style MAIL fill:#059669,color:#fff
+    style POOL fill:#4f46e5,color:#fff
+```
+
+### What happens when things break
+
+Each of these was a real failure, and each now degrades instead of collapsing:
+
+```mermaid
+flowchart LR
+    F1["Proxy is down"] --> H1["Retry directly<br/><i>log once, keep going</i>"] --> OK1["Ingest survives"]
+    F2["A feed 404s"] --> H2["Log it, skip that endpoint"] --> OK2["Other 12 lanes unaffected"]
+    F3["LLM returns bad JSON"] --> H3["Halve the batch, retry<br/><i>then neutral scores</i>"] --> OK3["Subscriber still gets an email"]
+    F4["Groq rate-limits"] --> H4["Rotate API key<br/><i>413 splits instead</i>"] --> OK4["Run continues"]
+    F5["Database SSL drops"] --> H5["Reconnect<br/><i>users held as snapshots</i>"] --> OK5["Send is unaffected"]
+    F6["YouTube throttles"] --> H6["Per-request timeout<br/>+ per-stage budget"] --> OK6["Bounded, not stalled"]
+    F7["Nothing was delivered"] --> H7["Alert email<br/>+ non-zero exit"] --> OK7["You find out same day"]
+
+    style OK1 fill:#059669,color:#fff
+    style OK2 fill:#059669,color:#fff
+    style OK3 fill:#059669,color:#fff
+    style OK4 fill:#059669,color:#fff
+    style OK5 fill:#059669,color:#fff
+    style OK6 fill:#059669,color:#fff
+    style OK7 fill:#059669,color:#fff
+```
+
+### A run, end to end
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CR as Cron
+    participant PL as Pipeline
+    participant EX as External sources
+    participant DB as PostgreSQL
+    participant AI as Groq LLM
+    participant U as Subscriber
+
+    CR->>PL: trigger daily run
+    PL->>DB: ensure schema + indexes
+
+    PL->>DB: read tracked keywords
+    DB-->>PL: distinct terms, popularity ordered
+    PL->>EX: fetch 13 lanes
+    EX-->>PL: ~400 articles
+    PL->>DB: upsert, deduplicated by guid
+
+    PL->>DB: candidates without a digest
+    Note over PL,DB: NOT EXISTS anti-join,<br/>newest-first per source
+    DB-->>PL: 60, balanced across sources
+    loop each article
+        PL->>AI: summarise
+        AI-->>PL: title + summary
+    end
+    PL->>DB: store digests
+
+    loop each subscriber
+        PL->>DB: profile + already-seen digests
+        PL->>AI: rank candidates 0-10
+        AI-->>PL: scores
+        PL->>PL: diversify + reserve keyword slots
+        PL->>DB: save recommendations
+        PL->>U: personalised email
+    end
+
+    alt run looks broken
+        PL->>U: operational alert
+        PL->>CR: exit non-zero
+    end
+```
 
 ---
 

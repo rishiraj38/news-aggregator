@@ -473,11 +473,14 @@ def _write_ci_summary(result: dict) -> None:
     nobody, which is exactly how the zero-email runs went unnoticed.
     """
     scraped = result.get("scraping") or {}
-    scraped_total = sum(v for v in scraped.values() if isinstance(v, int))
+    # A cached run reports {"status": "cached"} with no per-source counts, which
+    # is not the same as every source returning nothing.
+    counts = {k: v for k, v in scraped.items() if isinstance(v, int)}
+    scraped_total = sum(counts.values())
     emails = result.get("emails_sent", 0)
     users = result.get("user_digests", 0)
 
-    if scraped_total == 0:
+    if counts and scraped_total == 0:
         print("::warning title=No articles scraped::Every source returned 0 items.")
     if users > 0 and emails == 0:
         print(
@@ -502,8 +505,10 @@ def _write_ci_summary(result: dict) -> None:
         "| Source | Items |",
         "| --- | --- |",
     ]
-    for key in sorted(scraped):
-        lines.append(f"| {key} | {scraped[key]} |")
+    for key in sorted(counts):
+        lines.append(f"| {key} | {counts[key]} |")
+    if not counts:
+        lines.append("| _(scrape skipped — cached)_ | – |")
     if result.get("error"):
         lines += ["", f"### Error", "", f"```\n{result['error']}\n```"]
     try:
