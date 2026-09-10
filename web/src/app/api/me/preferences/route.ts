@@ -1,5 +1,11 @@
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/lib/db";
+import { getCurrentDbUser } from "@/lib/admin-auth";
+import {
+  canCustomize,
+  canTrackKeywords,
+  effectiveTier,
+} from "@/lib/entitlements";
 import {
   canonicalKeywordSelection,
   canonicalTopicSelection,
@@ -12,6 +18,9 @@ import {
  * Accepts `topics`, `keywords`, or both — each is applied only when present, so
  * the keyword editor and the bundle picker can save independently without
  * clobbering each other.
+ *
+ * Both are Pro features and are enforced here, not just in the UI. The pipeline
+ * also ignores a Free subscriber's stored preferences, so this is belt and braces.
  */
 export async function PATCH(req: Request) {
   const { userId } = await auth();
@@ -47,9 +56,23 @@ export async function PATCH(req: Request) {
     );
   }
 
-  const user = await db.user.findUnique({ where: { id: userId } });
+  const user = await getCurrentDbUser();
   if (!user) {
     return Response.json({ error: "User not synced yet — open dashboard once" }, { status: 404 });
+  }
+
+  const tier = effectiveTier(user.role, user.plan);
+  if (hasTopics && !canCustomize(user.role, user.plan)) {
+    return Response.json(
+      { error: "Choosing topic bundles is a Pro feature.", tier },
+      { status: 403 },
+    );
+  }
+  if (hasKeywords && !canTrackKeywords(user.role, user.plan)) {
+    return Response.json(
+      { error: "Keyword tracking is a Pro feature.", tier },
+      { status: 403 },
+    );
   }
 
   let prefs: Record<string, unknown> = {};
@@ -81,7 +104,7 @@ export async function PATCH(req: Request) {
   }
 
   await db.user.update({
-    where: { id: userId },
+    where: { id: user.id },
     data: { preferences: JSON.stringify(prefs) },
   });
 
@@ -94,7 +117,7 @@ export async function GET() {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const user = await db.user.findUnique({ where: { id: userId } });
+  const user = await getCurrentDbUser();
   if (!user) {
     return Response.json({ error: "User not synced yet" }, { status: 404 });
   }
@@ -110,5 +133,8 @@ export async function GET() {
     topics: canonicalTopicSelection(prefs.topics ?? null),
     keywords: canonicalKeywordSelection(prefs.keywords ?? []),
     maxKeywords: MAX_KEYWORDS_PER_USER,
+    tier: effectiveTier(user.role, user.plan),
+    canCustomize: canCustomize(user.role, user.plan),
+    canTrackKeywords: canTrackKeywords(user.role, user.plan),
   });
 }

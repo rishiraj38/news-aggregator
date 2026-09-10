@@ -219,6 +219,12 @@ sequenceDiagram
   subscribers were processed but nothing was delivered
 
 **Product**
+- **Three tiers** — Free gets a fixed daily briefing; Pro chooses topic bundles and
+  tracks keywords; admins get everything plus the admin console. Enforced in the
+  pipeline and the API, not just the UI.
+- **Admin console** — every member with their plan and delivery health, one-click
+  plan/role/status changes, and a daily email log showing who was emailed, whether
+  it landed, and exactly which articles were in it
 - Next.js dashboard with Clerk auth, topic picker, and keyword editor
 - Trial lifecycle with warning and expiry emails
 - Instagram card generation (Pillow) and publishing
@@ -265,7 +271,7 @@ YOUTUBE_API_KEY=optional_but_recommended
 ```bash
 docker compose up -d          # local Postgres
 uv run python main.py         # run the full pipeline
-python -m pytest              # 58 tests, offline, ~0.5s
+python -m pytest              # 103 tests, offline, ~0.5s
 ```
 
 Useful during development:
@@ -326,10 +332,10 @@ The full list lives in [CLAUDE.md](CLAUDE.md).
 python -m pytest
 ```
 
-58 tests, fully offline — no database, network, or API keys. They cover the parts
+103 tests, fully offline — no database, network, or API keys. They cover the parts
 that actually broke in production: keyword routing and privacy, source fairness in
 digest selection, email slot allocation, reconnect-safe user handling, curator
-degradation, and alert classification. CI runs them on every push alongside the
+degradation, alert classification, and subscriber tier enforcement. CI runs them on every push alongside the
 web typecheck and lint.
 
 ## License

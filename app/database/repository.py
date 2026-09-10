@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import nullslast
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, PendingRollbackError
-from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, GeneralRSSArticle, Digest, User, Recommendation, PipelineRun
+from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, GeneralRSSArticle, Digest, User, Recommendation, PipelineRun, EmailDelivery
 from .connection import get_session
 
 _logger = logging.getLogger(__name__)
@@ -37,6 +37,7 @@ class UserSnapshot:
     trial_warning_1_sent: Optional[str]
     trial_warning_2_sent: Optional[str]
     trial_expired_sent: Optional[str]
+    plan: Optional[str] = None
 
     @classmethod
     def from_user(cls, user: User) -> "UserSnapshot":
@@ -54,6 +55,7 @@ class UserSnapshot:
             trial_warning_1_sent=getattr(user, "trial_warning_1_sent", None),
             trial_warning_2_sent=getattr(user, "trial_warning_2_sent", None),
             trial_expired_sent=getattr(user, "trial_expired_sent", None),
+            plan=getattr(user, "plan", None),
         )
 
 
@@ -622,12 +624,19 @@ class Repository:
         from app.topic_packs.keywords import user_keywords
         import json
 
+        from app.services.entitlements import can_track_keywords
+
         def _do() -> List[str]:
-            rows = self.session.query(User.preferences).filter(
+            rows = self.session.query(User.preferences, User.role, User.plan).filter(
                 User.is_active == "true"
             ).all()
             counter: Counter = Counter()
-            for (raw,) in rows:
+            for raw, role, plan in rows:
+                # Keyword lanes are a Pro feature. Checking here means a
+                # downgraded subscriber's saved terms stop costing ingest too,
+                # not just stop appearing in their email.
+                if not can_track_keywords(role, plan):
+                    continue
                 try:
                     prefs = json.loads(raw or "{}")
                 except (json.JSONDecodeError, TypeError, ValueError):
@@ -637,6 +646,54 @@ class Repository:
             return [kw for kw, _ in counter.most_common(limit)]
 
         return self._safe_execute(_do)
+
+    def record_email_delivery(
+        self,
+        *,
+        user_id: str,
+        email: str,
+        kind: str,
+        status: str,
+        subject: Optional[str] = None,
+        error: Optional[str] = None,
+        digest_ids: Optional[List[str]] = None,
+        pipeline_run_id: Optional[str] = None,
+    ) -> bool:
+        """Append one row to the email delivery log. Never raises.
+
+        The log is observability, so failing to write it must not abort a send
+        that already happened (or mask the error of one that did not).
+        """
+        import json
+        import uuid
+
+        def _do() -> bool:
+            self.session.add(
+                EmailDelivery(
+                    id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    email=email,
+                    kind=kind,
+                    subject=(subject or None) and subject[:500],
+                    status=status,
+                    error=str(error)[:2000] if error else None,
+                    digest_ids=json.dumps(list(digest_ids)) if digest_ids else None,
+                    pipeline_run_id=pipeline_run_id,
+                    sent_at=datetime.now(timezone.utc),
+                )
+            )
+            self.session.commit()
+            return True
+
+        try:
+            return self._safe_execute(_do)
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("Could not record email delivery for %s: %s", email, exc)
+            try:
+                self.session.rollback()
+            except Exception:
+                pass
+            return False
 
     _USER_FLAG_FIELDS = frozenset(
         {

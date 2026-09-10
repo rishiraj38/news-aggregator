@@ -13,7 +13,7 @@ import {
 
 type Props = {
   initialKeywords: string[];
-  /** Locked for non-admin trial users; chips stay visible but read-only. */
+  /** Locked on the Free plan; chips stay visible but read-only. */
   disabled?: boolean;
   lockedHint?: string;
 };

@@ -87,6 +87,7 @@ class User(Base):
     is_active = Column(String, default="true")  # Boolean stored as string for simplicity
     subscription_status = Column(String, default="trial")
     role = Column(String, default="user")
+    plan = Column(String, default="free")  # "free" | "pro"; role="admin" overrides
     admin_welcome_sent = Column(String, default="false") # Boolean stored as string in this repo's pattern?
     trial_warning_2_sent = Column(String, default="false")
     trial_warning_1_sent = Column(String, default="false")
@@ -116,3 +117,26 @@ class PipelineRun(Base):
     log_summary = Column(Text, default="")
     users_processed = Column(String, default="0")  # Int stored as string for consistency
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class EmailDelivery(Base):
+    """One row per email the pipeline attempted to send.
+
+    `recommendations` records what was *picked* for a subscriber, but not whether
+    the email carrying it actually went out — which is how weeks of failed sends
+    stayed invisible. This is the authoritative "who got what, and did it land".
+    """
+
+    __tablename__ = "email_deliveries"
+
+    id = Column(String, primary_key=True)  # UUID
+    user_id = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    kind = Column(String, nullable=False)  # digest | trial_warning | trial_expired | admin_welcome
+    subject = Column(String, nullable=True)
+    status = Column(String, nullable=False)  # sent | failed
+    error = Column(Text, nullable=True)
+    digest_ids = Column(Text, nullable=True)  # JSON list of digest ids in the email
+    pipeline_run_id = Column(String, nullable=True)
+    sent_at = Column(DateTime, default=datetime.utcnow)
+

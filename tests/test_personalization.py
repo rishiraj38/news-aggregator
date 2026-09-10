@@ -178,6 +178,8 @@ def test_tracked_keywords_are_deduped_across_users(sqlite_repo):
     repo, _ = sqlite_repo
     from app.database.models import User
 
+    # Keyword lanes are a Pro feature, so both subscribers need Pro to count.
+    repo.session.query(User).filter_by(id="u1").first().plan = "pro"
     repo.session.add(
         User(
             id="u2",
@@ -185,6 +187,7 @@ def test_tracked_keywords_are_deduped_across_users(sqlite_repo):
             name="U Two",
             is_active="true",
             role="user",
+            plan="pro",
             preferences=json.dumps({"keywords": ["AI Agents", "nvidia earnings"]}),
             created_at=datetime.now(timezone.utc),
         )

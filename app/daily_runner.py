@@ -19,6 +19,7 @@ from app.database.models import Base
 from app.database.connection import engine
 from app.database.repository import Repository
 from app.topic_packs.registry import digest_matches_topics
+from app.services.entitlements import is_trial_exempt
 
 
 logging.basicConfig(
@@ -91,11 +92,13 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             from app.database.schema_migrations import (
                 ensure_image_url_columns,
                 ensure_lookup_indexes,
+                ensure_plan_column,
             )
 
             ensure_image_url_columns()
+            ensure_plan_column()
             ensure_lookup_indexes()
-            log_progress("✓ Schema migrations applied (image_url columns, lookup indexes)")
+            log_progress("✓ Schema migrations applied (image_url, plan, lookup indexes)")
         except Exception as e:
             logger.error(f"Failed to create database tables: {e}")
             raise
@@ -186,7 +189,7 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 if digest_email_test_only and user_email.strip().lower() != digest_email_test_only:
                     continue
                 # --- Trial Expiration Check (27 Days) ---
-                if user_role != "admin": # Admins are immune
+                if not is_trial_exempt(user_role, user.plan, user.subscription_status):  # admins, Pro, admin-activated
                     # Ensure timezone awareness compatibility
                     created_at = user.created_at
                     
@@ -204,14 +207,26 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     if days_left == 2 and str(user.trial_warning_2_sent).lower() != "true":
                         from app.services.process_email import send_trial_warning_email
                         logger.info(f"User {user_email} has 2 days left on trial. Sending warning email.")
-                        if send_trial_warning_email(user, days_left):
+                        sent_ok = send_trial_warning_email(user, days_left)
+                        repo.record_email_delivery(
+                            user_id=user_id, email=user_email, kind="trial_warning",
+                            subject=f"Trial warning · {days_left} day(s) left",
+                            status="sent" if sent_ok else "failed", pipeline_run_id=run_id,
+                        )
+                        if sent_ok:
                             user.trial_warning_2_sent = "true"
                             repo.set_user_flag(user_id, "trial_warning_2_sent")
 
                     elif days_left == 1 and str(user.trial_warning_1_sent).lower() != "true":
                         from app.services.process_email import send_trial_warning_email
                         logger.info(f"User {user_email} has 1 day left on trial. Sending warning email.")
-                        if send_trial_warning_email(user, days_left):
+                        sent_ok = send_trial_warning_email(user, days_left)
+                        repo.record_email_delivery(
+                            user_id=user_id, email=user_email, kind="trial_warning",
+                            subject=f"Trial warning · {days_left} day(s) left",
+                            status="sent" if sent_ok else "failed", pipeline_run_id=run_id,
+                        )
+                        if sent_ok:
                             user.trial_warning_1_sent = "true"
                             repo.set_user_flag(user_id, "trial_warning_1_sent")
 
@@ -220,7 +235,13 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                          if str(user.trial_expired_sent).lower() != "true":
                              from app.services.process_email import send_trial_expired_email
                              logger.info(f"User {user_email} trial expired. Sending expiration email.")
-                             if send_trial_expired_email(user):
+                             sent_ok = send_trial_expired_email(user)
+                             repo.record_email_delivery(
+                                 user_id=user_id, email=user_email, kind="trial_expired",
+                                 subject="Trial expired",
+                                 status="sent" if sent_ok else "failed", pipeline_run_id=run_id,
+                             )
+                             if sent_ok:
                                  user.trial_expired_sent = "true"
                                  repo.set_user_flag(user_id, "trial_expired_sent")
 
@@ -248,7 +269,13 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 if user_role == "admin" and admin_flag != "true":
                     from app.services.process_email import send_admin_welcome_email
                     logger.info(f"User {user_email} is a new admin. Sending welcome email...")
-                    if send_admin_welcome_email(user):
+                    welcome_ok = send_admin_welcome_email(user)
+                    repo.record_email_delivery(
+                        user_id=user_id, email=user_email, kind="admin_welcome",
+                        subject="Admin access unlocked",
+                        status="sent" if welcome_ok else "failed", pipeline_run_id=run_id,
+                    )
+                    if welcome_ok:
                         repo.update_user_admin_welcome(user_id)
                         user.admin_welcome_sent = "true"
                         logger.info("✓ Admin welcome email sent and flagged.")
@@ -396,6 +423,18 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     is_first_delivery=first_helix_digest,
                 )
                 
+                repo.record_email_delivery(
+                    user_id=user_id,
+                    email=user_email,
+                    kind="digest",
+                    subject=email_result.get("subject") or "Daily digest",
+                    status="sent" if email_result["success"] else "failed",
+                    error=email_result.get("error"),
+                    digest_ids=email_result.get("digest_ids")
+                    or [a.digest_id for a in final_articles_to_send],
+                    pipeline_run_id=run_id,
+                )
+
                 if email_result["success"]:
                     email_count += 1
                     log_progress(f"✓ Email sent to {user_email}")
@@ -522,10 +561,11 @@ if __name__ == "__main__":
     # Ensure tables exists
     from app.database.models import Base
     from app.database.connection import engine
-    from app.database.schema_migrations import ensure_image_url_columns
+    from app.database.schema_migrations import ensure_image_url_columns, ensure_plan_column
 
     Base.metadata.create_all(engine)
     ensure_image_url_columns()
+    ensure_plan_column()
 
     hours = int(os.getenv("PIPELINE_HOURS", "72") or 72)
     top_n = int(os.getenv("PIPELINE_TOP_N", "10") or 10)

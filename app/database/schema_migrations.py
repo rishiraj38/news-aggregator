@@ -36,6 +36,16 @@ def ensure_image_url_columns() -> None:
         _add_column_if_missing(table, "image_url", col_type)
 
 
+def ensure_plan_column() -> None:
+    """Add users.plan ("free" | "pro").
+
+    Existing rows are backfilled to "free" by the column default. Admins are
+    unaffected, because role="admin" overrides plan everywhere it is checked.
+    """
+    col_type = "TEXT DEFAULT 'free'" if engine.dialect.name == "sqlite" else "VARCHAR DEFAULT 'free'"
+    _add_column_if_missing("users", "plan", col_type)
+
+
 def ensure_instagram_posted_column() -> None:
     """Add posted_to_instagram to digests table (tracks which stories were already posted)."""
     col_type = "TEXT" if engine.dialect.name == "sqlite" else "VARCHAR"
@@ -54,6 +64,9 @@ _INDEXES: tuple[tuple[str, str, str], ...] = (
     ("ix_digests_created_at", "digests", "created_at"),
     # Per-user "already recommended" lookup during personalization.
     ("ix_recommendations_user", "recommendations", "user_id"),
+    # Admin console: deliveries by day, and one subscriber's send history.
+    ("ix_email_deliveries_sent_at", "email_deliveries", "sent_at"),
+    ("ix_email_deliveries_user", "email_deliveries", "user_id"),
 )
 
 

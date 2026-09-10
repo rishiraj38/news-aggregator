@@ -11,10 +11,19 @@ import {
   Activity,
   Newspaper,
   Layers,
+  ShieldCheck,
 } from "lucide-react";
 import { PipelineStatus } from "@/components/PipelineStatus";
 import TopicBundlePicker from "@/components/TopicBundlePicker";
 import KeywordManager from "@/components/KeywordManager";
+import Link from "next/link";
+import {
+  canCustomize,
+  canTrackKeywords,
+  effectiveTier,
+  isAdminRole,
+  TIER_LABELS,
+} from "@/lib/entitlements";
 import {
   ALLOWED_TOPIC_IDS,
   canonicalKeywordSelection,
@@ -161,6 +170,15 @@ export default async function Dashboard() {
     }
   }
 
+  // The pipeline ignores a Free subscriber's stored topics and keywords, so show
+  // what they actually receive rather than preferences that have no effect.
+  const tier = effectiveTier(dbUser?.role, dbUser?.plan);
+  const customizable = canCustomize(dbUser?.role, dbUser?.plan);
+  const keywordsAllowed = canTrackKeywords(dbUser?.role, dbUser?.plan);
+  const isAdmin = isAdminRole(dbUser?.role);
+  if (!customizable) topicIdsForPicker = defaultTopics;
+  if (!keywordsAllowed) keywordsForPicker = [];
+
   const laneSummary = summarizeLaneMix(recommendations);
   const firstName = user.firstName || "Friend";
   const picksToday = countRecommendationsToday(recommendations);
@@ -180,7 +198,7 @@ export default async function Dashboard() {
         className="pointer-events-none absolute inset-x-0 top-[4.5rem] h-[620px] helix-grid opacity-[0.42]"
         aria-hidden
       />
-      <Navbar />
+      <Navbar isAdmin={isAdmin} />
 
       <main className="relative max-w-[78rem] mx-auto px-4 sm:px-6 lg:px-10 pt-[calc(5rem+env(safe-area-inset-top))] pb-16 sm:pb-28 space-y-10 sm:space-y-14">
         <header className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:gap-12 items-start">
@@ -202,7 +220,7 @@ export default async function Dashboard() {
           </div>
 
           <div className="flex flex-col sm:flex-row lg:flex-col gap-3 lg:justify-end">
-            {dbUser?.role === "admin" ? (
+            {isAdmin ? (
               <div className="admin-badge-glow inline-flex items-center gap-3 rounded-2xl px-4.5 py-3 text-sm font-medium cursor-default select-none">
                 <span className="relative flex items-center justify-center">
                   <Sparkles className="admin-sparkle-icon w-4 h-4 text-accent shrink-0" strokeWidth={2} />
@@ -218,7 +236,7 @@ export default async function Dashboard() {
             ) : (
               <div className="inline-flex items-center gap-3 rounded-2xl border border-line bg-surface-raised/85 px-4 py-3.5 text-sm font-medium text-ink-muted backdrop-blur-sm shadow-[0_18px_50px_-32px_rgb(15_23_42/1)]">
                 <Sparkles className="w-4 h-4 text-accent shrink-0" strokeWidth={1.75} />
-                Explorer plan
+                {TIER_LABELS[tier]} plan
               </div>
             )}
           </div>
@@ -316,8 +334,25 @@ export default async function Dashboard() {
           </section>
         )}
 
-        {dbUser?.role === "admin" && (
-          <section className="rounded-2xl border border-accent/25 bg-accent-soft/[0.12] backdrop-blur-sm px-5 py-5 sm:px-7">
+        {isAdmin && (
+          <section className="rounded-2xl border border-accent/25 bg-accent-soft/[0.12] backdrop-blur-sm px-5 py-5 sm:px-7 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-ink flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-accent" strokeWidth={2} aria-hidden />
+                  Admin console
+                </p>
+                <p className="text-xs text-ink-muted mt-1">
+                  Members and plans, the daily email log with contents, and pipeline health.
+                </p>
+              </div>
+              <Link
+                href="/admin"
+                className="inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-accent text-surface-deep text-sm font-semibold hover:brightness-110 transition-[filter]"
+              >
+                Open admin console
+              </Link>
+            </div>
             <PipelineStatus />
           </section>
         )}
@@ -331,7 +366,14 @@ export default async function Dashboard() {
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-accent/35 bg-accent-soft/50">
               <Layers className="w-5 h-5 text-accent" strokeWidth={1.85} aria-hidden />
             </div>
-            <TopicBundlePicker initialTopics={topicIdsForPicker} />
+            <div className="min-w-0 flex-1 space-y-3">
+              <TopicBundlePicker initialTopics={topicIdsForPicker} disabled={!customizable} />
+              {!customizable && (
+                <p className="text-[11px] text-ink-faint">
+                  The Free plan includes every bundle. Choosing your own is a Pro feature.
+                </p>
+              )}
+            </div>
           </div>
         </section>
 
@@ -343,8 +385,8 @@ export default async function Dashboard() {
             <div className="min-w-0 flex-1">
               <KeywordManager
                 initialKeywords={keywordsForPicker}
-                disabled={dbUser?.role !== "admin"}
-                lockedHint="Custom keyword tracking unlocks on Full access."
+                disabled={!keywordsAllowed}
+                lockedHint="Keyword tracking is a Pro feature."
               />
             </div>
           </div>

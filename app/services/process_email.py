@@ -214,8 +214,11 @@ def send_personalized_email(
         )
 
         return {
-            "success": True, 
-            "articles_count": len(hydrated_articles)
+            "success": True,
+            "articles_count": len(hydrated_articles),
+            # Returned so the caller can write an accurate delivery log entry.
+            "subject": subject,
+            "digest_ids": [a.digest_id for a in hydrated_articles],
         }
 
     except Exception as e:

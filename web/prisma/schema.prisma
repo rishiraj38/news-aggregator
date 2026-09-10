@@ -73,6 +73,7 @@ model User {
   is_active       String?          @db.VarChar
   subscription_status String       @default("trial") @db.VarChar
   role            String           @default("user") @db.VarChar
+  plan            String?          @default("free") @db.VarChar
   admin_welcome_sent String?       @default("false") @db.VarChar
   created_at      DateTime?        @db.Timestamp(6)
   recommendations Recommendation[]
@@ -116,4 +117,23 @@ model PipelineRun {
   created_at      DateTime? @db.Timestamp(6)
 
   @@map("pipeline_runs")
+}
+
+/// One row per email the pipeline attempted to send. Written by the Python
+/// pipeline (app/database/models.py EmailDelivery); read by the admin console.
+/// Deliberately no relation to User: a delivery must stay readable even if the
+/// subscriber row is later deleted.
+model EmailDelivery {
+  id              String    @id @db.VarChar
+  user_id         String    @db.VarChar
+  email           String    @db.VarChar
+  kind            String    @db.VarChar
+  subject         String?   @db.VarChar
+  status          String    @db.VarChar
+  error           String?
+  digest_ids      String?
+  pipeline_run_id String?   @db.VarChar
+  sent_at         DateTime? @db.Timestamp(6)
+
+  @@map("email_deliveries")
 }

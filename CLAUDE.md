@@ -13,7 +13,7 @@
 | Instagram card (publish) | `uv run python publish_instagram_card.py --publish` |
 | Instagram diagnostics | `uv run python publish_instagram_card.py --instagram-diagnose` |
 | Install deps | `uv sync` or `uv pip install -r requirements.txt` |
-| Python version | ≥3.12 (pyproject.toml); CI uses 3.11 |
+| Python version | ≥3.12 (pyproject.toml); CI uses 3.12 |
 | Package manager | `uv` (astral) |
 | Database | PostgreSQL (SQLAlchemy ORM) |
 | LLM provider | Groq API (OpenAI-compatible SDK) |
@@ -28,7 +28,7 @@
 main.py / app/daily_runner.py          ← Entry point (GitHub Actions cron)
 │
 ├─ [1/5] Scraping ─────────────────── app/runner.py + app/scrapers/*
-│   ├── YouTubeScraper                 (yt-dlp search + transcript API)
+│   ├── YouTubeScraper                 (Data API v3 search + transcript API)
 │   ├── OpenAIScraper                  (RSS: openai.com/blog)
 │   ├── AnthropicScraper               (RSS: anthropic.com)
 │   ├── TechCrunchScraper              (RSS: AI category + main feed)
@@ -46,7 +46,8 @@ main.py / app/daily_runner.py          ← Entry point (GitHub Actions cron)
     ├── CuratorAgent (LLM)             → Ranks digests per-user profile
     ├── EmailAgent (LLM)               → Generates personalized intro
     ├── Diversification                 → topic_packs/diversify.py
-    └── Email sending                  → services/email_sender.py (SMTP)
+    ├── Email sending                  → services/email_sender.py (SMTP)
+    └── Delivery log                   → email_deliveries (every send, status + contents)
 ```
 
 ### Instagram Card Pipeline (separate workflow)
@@ -117,7 +118,7 @@ publish_instagram_card.py
 │   │   ├── news_graphic.py     # Pillow card renderer (1080×1350)
 │   │   ├── instagram_publish.py # Meta Graph API + image hosting chain
 │   │   ├── mail_links.py       # Email footer links (website, Instagram)
-│   │   ├── search_agent.py     # YouTube search via yt-dlp
+│   │   ├── search_agent.py     # YouTube search via Data API v3 (channel RSS fallback)
 │   │   └── user_service.py     # User CRUD wrapper
 │   │
 │   ├── topic_packs/
@@ -135,6 +136,7 @@ publish_instagram_card.py
 ├── .github/workflows/
 │   ├── daily_digest.yml        # Cron: 10:30 UTC daily
 │   ├── instagram_post.yml      # Cron: 11:00 UTC daily (30min after digest)
+│   ├── tests.yml               # pytest + web typecheck/lint on every push and PR
 │   └── docker-publish.yml      # Docker image builds
 │
 └── scripts/                    # Utility scripts
@@ -144,7 +146,7 @@ publish_instagram_card.py
 
 ## Database Schema (PostgreSQL + SQLAlchemy)
 
-7 tables, all use String primary keys (UUIDs or composite IDs):
+9 tables, all use String primary keys (UUIDs or composite IDs):
 
 | Table | Key | Purpose |
 |-------|-----|---------|
@@ -153,8 +155,9 @@ publish_instagram_card.py
 | `anthropic_articles` | `guid` | Anthropic blog RSS articles |
 | `general_rss_articles` | `guid` | TechCrunch, The Verge, topic-pack RSS. `source` column identifies origin |
 | `digests` | `id` (uuid) | LLM-generated title + summary per article. `article_type` + `article_id` link back |
-| `users` | `id` (uuid) | Subscribers with JSON preferences, trial tracking |
-| `recommendations` | `id` | Per-user ranked digest entries |
+| `users` | `id` (Clerk id) | Subscribers: JSON preferences, trial tracking, `role` (user/admin), `plan` (free/pro) |
+| `recommendations` | `id` | Per-user ranked digest entries — what was *picked* |
+| `email_deliveries` | `id` (uuid) | Every email the pipeline attempted: kind, status, error, digest ids — what actually *went out* |
 | `pipeline_runs` | `id` | Execution logs |
 
 **Conventions**:
@@ -385,7 +388,7 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 
 12. **Digest IDs**: Format is `"{article_type}:{article_id}"`, but curator output sometimes includes quotes/whitespace. `_normalize_curator_digest_id()` in `publish_instagram_card.py` handles cleanup.
 
-13. **Topic filtering**: Unknown `article_type` values pass through `digest_matches_topics()` (returns True). This is intentional — prevents silently dropping articles after migrations. Users with only `['technology']` topics will get 0 matches if the batch was all sports/politics — increase `DIGEST_BATCH_LIMIT` for topic diversity.
+13. **Topic filtering**: Unknown `article_type` values pass through `digest_matches_topics()` (returns True). This is intentional — prevents silently dropping articles after migrations. The source round-robin in `get_articles_without_digest()` keeps every lane represented in a batch, so a single-topic subscriber no longer needs a larger `DIGEST_BATCH_LIMIT` to get matches.
 
 14. **BBC thumbnail blurriness**: BBC RSS feeds serve thumbnails at 240px. `thumbnail_resolve.py` auto-upgrades to 1024px via path/query rewriting. If images still look blurry, check the source URL is hitting the `_BBC_PATH_WIDTH_RE` regex.
 
@@ -393,9 +396,44 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 
 16. **Gmail App Password expiration**: SMTP error `535 5.7.8 Username and Password not accepted` means the `APP_PASSWORD` is invalid. Regenerate at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) and update GitHub Secret.
 
-17. **Trial system**: 27-day trial with warnings at 2 days and 1 day remaining. Admins (`role="admin"`) are exempt. Expiration flags stored as string booleans.
+17. **Trial system**: 27-day trial with warnings at 2 days and 1 day remaining. `is_trial_exempt()` exempts admins, Pro, and anyone whose `subscription_status` is `active`. **The pipeline recomputes expiry from `created_at` every run and never reads status to skip anyone** — so without the `active` exemption, an admin reactivating a Free subscriber in the console would be silently reverted by the next run. Free users on the trial clock still expire. Expiration flags stored as string booleans.
+
+18. **Gate features on the server, never only in the UI**: `/api/pipeline/status` used to be hidden from non-admins on the dashboard while the endpoint itself answered any signed-in account — and its run log contains every subscriber's name and email. Every `/api/admin/*` route must call `requireAdmin()`; `PATCH /api/me/preferences` enforces tiers itself; and the pipeline's `get_user_profile()` ignores a Free subscriber's stored preferences. A disabled button is not a permission check.
 
 ---
+
+## Subscriber Tiers & Admin Console
+
+### Tiers (`app/services/entitlements.py`, mirrored in `web/src/lib/entitlements.ts`)
+Derived from two columns — keep the Python and TypeScript copies in step:
+
+| Tier | Condition | Topic bundles | Keywords | Trial clock | Admin console |
+|------|-----------|---------------|----------|-------------|---------------|
+| **Free** | `plan="free"` (default) | Fixed — all bundles | ✗ | Expires at 27 days | ✗ |
+| **Pro** | `plan="pro"` | Choose | ✓ | Exempt | ✗ |
+| **Admin** | `role="admin"` (overrides plan) | Choose | ✓ | Exempt | ✓ |
+
+- `normalize_plan()` treats any unknown value as Free — never accidentally Pro.
+- **Enforced in three places**: the pipeline (`UserService.get_user_profile()` returns the fixed briefing for Free; `repo.get_tracked_keywords()` skips Free users so their saved terms don't cost ingest either), the API (`PATCH /api/me/preferences` returns 403), and the dashboard UI.
+- No payment integration yet: Pro is granted by an admin in the console.
+
+### Admin console (`web/src/app/admin/`)
+Server-rendered page that redirects non-admins; every endpoint it calls re-checks with `requireAdmin()` from `web/src/lib/admin-auth.ts`.
+
+| Tab | Endpoint | Shows |
+|-----|----------|-------|
+| Members | `GET /api/admin/members` | Every subscriber: tier, plan, status, role, active flag, last email, 30-day sent/failed |
+| (row detail) | `GET /api/admin/members/[id]` | Preferences, logged emails with the exact articles, and 14 days of curator picks |
+| (row edit) | `PATCH /api/admin/members/[id]` | Change `plan`, `subscription_status`, `role`, `is_active` |
+| Email log | `GET /api/admin/deliveries?date=YYYY-MM-DD` | Who was emailed that UTC day, delivered or failed, and each email's contents |
+| Pipeline | `GET /api/pipeline/status` | Latest run log (admin-only) |
+
+`PATCH` guard rails: an admin can't demote or pause themselves, and the last remaining admin can't be demoted. Making someone admin asks for confirmation in the UI. Changes are logged server-side as `[admin] <actor> updated <target>: {...}`.
+
+### Email delivery log
+`repo.record_email_delivery()` is called at all five send sites in `daily_runner` (digest, both trial warnings, trial expired, admin welcome). It never raises — it's observability, and must not abort a send that already happened. The log starts when it was introduced; for earlier days the member detail view falls back to `recommendations`, which records what was *picked* but not whether it was delivered.
+
+**Deploy order matters**: the Prisma schema maps `users.plan` and `email_deliveries`, so run the migration (`ensure_plan_column()` + `Base.metadata.create_all`) against production *before* the web app deploys, or dashboard queries will fail.
 
 ## Alerting (`app/services/alerts.py`)
 
@@ -427,6 +465,7 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_alerts.py` | Which run shapes count as incidents vs quiet days, and that alerting never raises |
 | `test_curator_resilience.py` | `json_validate_failed` detection, split-recovery, and that a failed chunk never costs the whole email |
 | `test_youtube_search.py` | View-count filtering, ordering, shorts exclusion, and graceful API failure |
+| `test_entitlements.py` | Tier resolution, Free getting the fixed briefing server-side, Pro-only keyword lanes, trial exemption, and the delivery log |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads

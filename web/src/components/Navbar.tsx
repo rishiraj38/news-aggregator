@@ -6,7 +6,7 @@ import { Menu, X } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-export default function Navbar() {
+export default function Navbar({ isAdmin = false }: { isAdmin?: boolean }) {
   const { isSignedIn } = useUser();
   const [isOpen, setIsOpen] = useState(false);
 
@@ -19,6 +19,15 @@ export default function Navbar() {
       >
         Feed
       </Link>
+      {isSignedIn && isAdmin && (
+        <Link
+          href="/admin"
+          className="hover-shine text-sm font-medium text-ink-muted hover:text-ink transition-colors"
+          onClick={() => setIsOpen(false)}
+        >
+          Admin
+        </Link>
+      )}
       {!isSignedIn && (
         <a
           href="#pricing"

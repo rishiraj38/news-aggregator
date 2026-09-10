@@ -2,8 +2,9 @@ import json
 from typing import Any, Mapping, Optional, Dict
 from app.database.repository import Repository
 from app.database.models import User
-from app.topic_packs.keywords import user_keyword_source_keys, user_keywords
-from app.topic_packs.registry import TOPIC_LABELS, normalize_user_topics
+from app.services.entitlements import can_customize, can_track_keywords
+from app.topic_packs.keywords import keyword_source_key, user_keywords
+from app.topic_packs.registry import ALLOWED_TOPIC_IDS, TOPIC_LABELS, normalize_user_topics
 
 class UserService:
     def __init__(self):
@@ -37,14 +38,24 @@ class UserService:
         if not isinstance(interests, list):
             interests = [str(interests)] if interests else []
 
-        topics_norm = normalize_user_topics(prefs)
+        role = getattr(user, "role", None)
+        plan = getattr(user, "plan", None)
+
+        # Free subscribers get the fixed briefing regardless of what is stored in
+        # their preferences — e.g. terms saved while on Pro before a downgrade.
+        # This is the server-side gate; the dashboard's locked controls are only
+        # a convenience on top of it.
+        if can_customize(role, plan):
+            topics_norm = normalize_user_topics(prefs)
+        else:
+            topics_norm = list(ALLOWED_TOPIC_IDS)
         topic_labels = [TOPIC_LABELS[t] for t in topics_norm if t in TOPIC_LABELS]
-        keywords = user_keywords(prefs)
+        keywords = user_keywords(prefs) if can_track_keywords(role, plan) else []
 
         return {
             "name": user.name,
             "keywords": keywords,
-            "keyword_source_keys": user_keyword_source_keys(prefs),
+            "keyword_source_keys": frozenset(keyword_source_key(kw) for kw in keywords),
             "title": user.title,
             "background": f"{user.title} - {user.expertise_level}", # Synthesized background
             "expertise_level": user.expertise_level,
