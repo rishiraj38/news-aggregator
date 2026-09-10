@@ -139,7 +139,10 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         log_progress("\n[5/5] Generating personalized digests for users...")
         
         # repo already initialized above
-        active_users = repo.get_active_users()
+        # Snapshots, not ORM rows: a mid-run SSL reconnect swaps the session and
+        # detaches live User objects, which previously made every downstream
+        # `user.email` raise and dropped the whole send to zero emails.
+        active_users = repo.get_active_user_snapshots()
         log_progress(f"Found {len(active_users)} active users")
 
         if not active_users:
@@ -154,9 +157,13 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
         # Get all recent digests once
         recent_digests = repo.get_recent_digests(hours=hours, exclude_sent=False)
         if not recent_digests:
-             logger.info("No digests available to rank.")
-             results["user_digests"] = 0
-             return results
+            # Fall through instead of returning early, so the run still records
+            # its duration and prints the summary block.
+            logger.warning(
+                "No digests available to rank (window=%dh). Nothing to personalize.",
+                hours,
+            )
+            active_users = []
 
         user_count = 0
         email_count = 0
@@ -165,20 +172,11 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             log_progress(f"⚠ DIGEST_EMAIL_TEST_ONLY set — personalization runs only for {digest_email_test_only}")
 
         for user in active_users:
-            # Eagerly capture identifiers BEFORE any DB work so error
-            # handlers never trigger a lazy-load on a broken session.
-            try:
-                user_email = user.email
-                user_name = user.name
-                user_id = user.id
-                user_role = user.role
-            except Exception:
-                logger.warning("Could not read user attributes — skipping.")
-                try:
-                    repo.session.rollback()
-                except Exception:
-                    pass
-                continue
+            user_email = user.email
+            user_name = user.name
+            user_id = user.id
+            user_role = user.role
+            ranked_this_user = False
 
             try:
                 if digest_email_test_only and user_email.strip().lower() != digest_email_test_only:
@@ -204,15 +202,15 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                         logger.info(f"User {user_email} has 2 days left on trial. Sending warning email.")
                         if send_trial_warning_email(user, days_left):
                             user.trial_warning_2_sent = "true"
-                            repo.session.commit()
-                    
+                            repo.set_user_flag(user_id, "trial_warning_2_sent")
+
                     elif days_left == 1 and str(user.trial_warning_1_sent).lower() != "true":
                         from app.services.process_email import send_trial_warning_email
                         logger.info(f"User {user_email} has 1 day left on trial. Sending warning email.")
                         if send_trial_warning_email(user, days_left):
                             user.trial_warning_1_sent = "true"
-                            repo.session.commit()
-                    
+                            repo.set_user_flag(user_id, "trial_warning_1_sent")
+
                     # STRICT 27-day limit
                     if days_active >= trial_limit:
                          if str(user.trial_expired_sent).lower() != "true":
@@ -220,14 +218,14 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                              logger.info(f"User {user_email} trial expired. Sending expiration email.")
                              if send_trial_expired_email(user):
                                  user.trial_expired_sent = "true"
-                                 repo.session.commit()
+                                 repo.set_user_flag(user_id, "trial_expired_sent")
 
                          msg = f"User {user_email} trial expired ({days_active} days >= {trial_limit}). Marking expired & skipping."
                          logger.info(msg)
                          log_progress(msg)
-                         
+
                          # Update DB status
-                         repo.update_user_status(user.id, "expired")
+                         repo.update_user_status(user_id, "expired")
                          continue
                 # ----------------------------------------
 
@@ -239,20 +237,17 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 logger.info(msg)
                 log_progress(msg)
 
-                # Refresh user from DB to get latest flags (prevents stale data)
-                repo.session.refresh(user)
-
                 # 0. Check for New Admin Promotion - ROBUST CHECK
                 # Handle "True", "true", True (bool), etc.
                 admin_flag = str(user.admin_welcome_sent).lower()
-                
-                if user.role == "admin" and admin_flag != "true":
+
+                if user_role == "admin" and admin_flag != "true":
                     from app.services.process_email import send_admin_welcome_email
                     logger.info(f"User {user_email} is a new admin. Sending welcome email...")
                     if send_admin_welcome_email(user):
-                        repo.update_user_admin_welcome(user.id)
-                        repo.session.refresh(user)  # Refresh to get updated flag
-                        logger.info(f"✓ Admin welcome email sent and flagged (flag now: {user.admin_welcome_sent}).")
+                        repo.update_user_admin_welcome(user_id)
+                        user.admin_welcome_sent = "true"
+                        logger.info("✓ Admin welcome email sent and flagged.")
                     else:
                         logger.error("✗ Failed to send admin welcome email.")
                 user_profile = user_service.get_user_profile(user)
@@ -271,9 +266,18 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     continue
 
                 topic_set = set(user_profile["topics"])
+                keyword_keys = user_profile.get("keyword_source_keys") or frozenset()
+                if keyword_keys:
+                    logger.info(
+                        "Tracking %d keyword(s) for %s: %s",
+                        len(keyword_keys), user_name,
+                        ", ".join(user_profile.get("keywords") or []),
+                    )
                 before_topics = len(unseen_digests)
                 unseen_digests = [
-                    d for d in unseen_digests if digest_matches_topics(d["article_type"], topic_set)
+                    d
+                    for d in unseen_digests
+                    if digest_matches_topics(d["article_type"], topic_set, keyword_keys)
                 ]
                 if before_topics != len(unseen_digests):
                     log_progress(
@@ -291,7 +295,25 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     time.sleep(0.5)
                     continue
                 
+                # Bound the per-user Groq spend. recent_digests is already
+                # newest-first, so this keeps the freshest candidates.
+                max_candidates = int(os.getenv("CURATOR_MAX_CANDIDATES", "60") or 60)
+                if max_candidates > 0 and len(unseen_digests) > max_candidates:
+                    # Keyword matches are the whole point of a subscriber's opt-in,
+                    # so they survive the trim ahead of generic bundle items.
+                    from app.topic_packs.keywords import is_keyword_source
+
+                    kw_hits = [d for d in unseen_digests if is_keyword_source(d["article_type"])]
+                    others = [d for d in unseen_digests if not is_keyword_source(d["article_type"])]
+                    trimmed = (kw_hits + others)[:max_candidates]
+                    logger.info(
+                        "Trimming ranking pool for %s: %d → %d (%d keyword hit(s) kept)",
+                        user_name, len(unseen_digests), len(trimmed), len(kw_hits),
+                    )
+                    unseen_digests = trimmed
+
                 logger.info(f"Ranking {len(unseen_digests)} new digests for {user_name} (out of {len(recent_digests)} total recent)...")
+                ranked_this_user = True
 
                 # 2. Rank Content
                 curator = CuratorAgent(user_profile)
@@ -384,10 +406,11 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 except Exception as rb_err:
                     logger.warning(f"Rollback also failed: {rb_err}")
             
-            # Rate Limit Protection (Groq has RPM limits)
-            # Increased to 10s to stay safely below 30 RPM (approx 6 RPM)
-            logger.info("Sleeping 10s to respect Groq Rate Limits...")
-            time.sleep(10)
+            # Rate Limit Protection (Groq has RPM limits). Only pay this when the
+            # user actually reached the API — skipped users used to cost 10s each.
+            if ranked_this_user:
+                logger.info("Sleeping 10s to respect Groq Rate Limits...")
+                time.sleep(10)
         
         results["user_digests"] = user_count
         results["emails_sent"] = email_count
@@ -429,6 +452,57 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
     return results
 
 
+def _env_flag(name: str, default: str = "false") -> bool:
+    return str(os.getenv(name, default)).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _write_ci_summary(result: dict) -> None:
+    """Emit a GitHub Actions job summary + annotations.
+
+    Without this the job stayed green while scraping nothing and emailing
+    nobody, which is exactly how the zero-email runs went unnoticed.
+    """
+    scraped = result.get("scraping") or {}
+    scraped_total = sum(v for v in scraped.values() if isinstance(v, int))
+    emails = result.get("emails_sent", 0)
+    users = result.get("user_digests", 0)
+
+    if scraped_total == 0:
+        print("::warning title=No articles scraped::Every source returned 0 items.")
+    if users > 0 and emails == 0:
+        print(
+            f"::warning title=No emails sent::{users} user(s) processed but 0 emails "
+            "were delivered."
+        )
+
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+    lines = [
+        "## Helix daily digest",
+        "",
+        f"- **Duration**: {result.get('duration_seconds', 0):.0f}s",
+        f"- **Articles scraped**: {scraped_total}",
+        f"- **Digests created**: {(result.get('digests') or {}).get('processed', 0)}",
+        f"- **Users processed**: {users}",
+        f"- **Emails sent**: {emails}",
+        "",
+        "### Per-source scrape counts",
+        "",
+        "| Source | Items |",
+        "| --- | --- |",
+    ]
+    for key in sorted(scraped):
+        lines.append(f"| {key} | {scraped[key]} |")
+    if result.get("error"):
+        lines += ["", f"### Error", "", f"```\n{result['error']}\n```"]
+    try:
+        with open(summary_path, "a") as fh:
+            fh.write("\n".join(lines) + "\n")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not write CI summary: %s", exc)
+
+
 if __name__ == "__main__":
     # Ensure tables exists
     from app.database.models import Base
@@ -438,5 +512,23 @@ if __name__ == "__main__":
     Base.metadata.create_all(engine)
     ensure_image_url_columns()
 
-    result = run_daily_pipeline(hours=72, top_n=10)  # 72 hours for demo
-    exit(0 if result.get("success", True) else 1)
+    hours = int(os.getenv("PIPELINE_HOURS", "72") or 72)
+    top_n = int(os.getenv("PIPELINE_TOP_N", "10") or 10)
+    force_scrape = _env_flag("PIPELINE_FORCE_SCRAPE")
+
+    result = run_daily_pipeline(hours=hours, top_n=top_n, force_scrape=force_scrape)
+    _write_ci_summary(result)
+
+    ok = bool(result.get("success", False))
+
+    # Surface the silent-failure mode: a run that reaches subscribers but sends
+    # nothing is a bug, not a quiet day. Set FAIL_ON_ZERO_EMAILS=false to opt out.
+    if ok and _env_flag("FAIL_ON_ZERO_EMAILS", "true"):
+        if result.get("user_digests", 0) > 0 and result.get("emails_sent", 0) == 0:
+            logger.error(
+                "Pipeline processed %s user(s) but sent 0 emails — failing the run.",
+                result.get("user_digests", 0),
+            )
+            ok = False
+
+    exit(0 if ok else 1)

@@ -6,7 +6,6 @@ import {
   Sparkles,
   Clock,
   ExternalLink,
-  Lock,
   ChevronDown,
   ArrowUpRight,
   Activity,
@@ -15,7 +14,12 @@ import {
 } from "lucide-react";
 import { PipelineStatus } from "@/components/PipelineStatus";
 import TopicBundlePicker from "@/components/TopicBundlePicker";
-import { ALLOWED_TOPIC_IDS, canonicalTopicSelection } from "@/lib/topics";
+import KeywordManager from "@/components/KeywordManager";
+import {
+  ALLOWED_TOPIC_IDS,
+  canonicalKeywordSelection,
+  canonicalTopicSelection,
+} from "@/lib/topics";
 import {
   digestLaneFromArticleType,
   digestLaneHumanLabel,
@@ -142,12 +146,18 @@ export default async function Dashboard() {
   });
 
   let topicIdsForPicker = defaultTopics;
+  let keywordsForPicker: string[] = [];
   if (dbUser?.preferences) {
     try {
-      const p = JSON.parse(dbUser.preferences) as { topics?: unknown };
+      const p = JSON.parse(dbUser.preferences) as {
+        topics?: unknown;
+        keywords?: unknown;
+      };
       topicIdsForPicker = canonicalTopicSelection(p.topics ?? null);
+      keywordsForPicker = canonicalKeywordSelection(p.keywords ?? []);
     } catch {
       topicIdsForPicker = defaultTopics;
+      keywordsForPicker = [];
     }
   }
 
@@ -326,75 +336,16 @@ export default async function Dashboard() {
         </section>
 
         <section className="rounded-2xl border border-line/85 bg-surface/80 backdrop-blur-sm p-6 sm:p-8 lg:p-9 shadow-[0_26px_80px_-62px_rgb(15_23_42/1)]">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-[0.7rem] font-bold uppercase tracking-[0.2em] text-ink-faint mb-5 flex flex-wrap items-center gap-2">
-                <Newspaper className="w-4 h-4 text-ink-muted" strokeWidth={1.85} aria-hidden />
-                Interest filters
-                {dbUser?.role === "admin" ? (
-                  <span className="text-[0.625rem] font-semibold normal-case px-2.5 py-0.5 rounded-full border border-accent/35 bg-accent-soft text-ink">
-                    Unlocked
-                  </span>
-                ) : (
-                  <Lock className="w-3.5 h-3.5 text-ink-faint" strokeWidth={2} aria-label="Locked" />
-                )}
-              </h2>
-              <div className="flex flex-wrap gap-2">
-                {(() => {
-                  try {
-                    const prefs = dbUser?.preferences
-                      ? JSON.parse(dbUser.preferences as string)
-                      : {};
-                    const interests =
-                      prefs.interests || prefs.keywords || ["Tech News"];
-                    return interests.map((tag: string) => (
-                      <span
-                        key={tag}
-                        className="px-3 py-2 rounded-xl bg-surface-raised/95 text-[0.9rem] text-ink-muted border border-line/90"
-                      >
-                        {tag}
-                      </span>
-                    ));
-                  } catch {
-                    return (
-                      <span className="text-sm text-ink-faint">Default interests</span>
-                    );
-                  }
-                })()}
-                <span
-                  className="px-3 py-2 rounded-xl border border-dashed border-line-strong text-[0.9rem] text-ink-faint cursor-default"
-                  title={
-                    dbUser?.role === "admin"
-                      ? "Managed in admin tools"
-                      : "Upgrade to customize"
-                  }
-                >
-                  + Keyword
-                </span>
-              </div>
+          <div className="flex flex-col gap-6 sm:flex-row sm:gap-10">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-accent/35 bg-accent-soft/50">
+              <Newspaper className="w-5 h-5 text-accent" strokeWidth={1.85} aria-hidden />
             </div>
-            <div className="shrink-0 lg:text-right lg:max-w-[14rem]">
-              {dbUser?.role === "admin" ? (
-                <button
-                  type="button"
-                  className="inline-flex w-full lg:w-auto items-center justify-center gap-2 min-h-11 px-5 rounded-xl bg-accent text-surface-deep text-sm font-semibold hover:brightness-110 transition-[filter] shadow-[0_16px_40px_-26px_rgb(79_70_229/1)]"
-                >
-                  <Sparkles className="w-4 h-4" strokeWidth={2} />
-                  Manage keywords
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="inline-flex w-full lg:w-auto items-center justify-center gap-2 min-h-11 px-5 rounded-xl border border-line-strong bg-surface-raised text-sm font-semibold text-ink hover:border-accent/35 transition-colors"
-                  >
-                    Customize (upgrade)
-                  </button>
-                  <p className="text-[11px] text-ink-faint mt-2.5">
-                    Unlock custom themes on Full access.
-                  </p>
-                </>
-              )}
+            <div className="min-w-0 flex-1">
+              <KeywordManager
+                initialKeywords={keywordsForPicker}
+                disabled={dbUser?.role !== "admin"}
+                lockedHint="Custom keyword tracking unlocks on Full access."
+              />
             </div>
           </div>
         </section>

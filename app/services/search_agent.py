@@ -151,7 +151,26 @@ class SearchAgent:
                 f"?channel_id={channel_id}"
             )
             try:
-                feed = feedparser.parse(rss_url)
+                # feedparser.parse(url) swallows the HTTP status entirely, so a
+                # 404/500 looked identical to "channel posted nothing". Fetch it
+                # ourselves with a real User-Agent and surface the failure.
+                resp = requests.get(
+                    rss_url,
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (compatible; HelixNewsCurator/1.0; "
+                            "+https://helix-seven-eta.vercel.app)"
+                        )
+                    },
+                    timeout=20,
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "YouTube channel feed %s returned HTTP %s — skipping.",
+                        channel_id, resp.status_code,
+                    )
+                    continue
+                feed = feedparser.parse(resp.content)
                 for entry in feed.entries:
                     vid = entry.get("yt_videoid", "")
                     if not vid or vid in seen:
@@ -196,6 +215,12 @@ class SearchAgent:
         is set, otherwise falls back to featured channel RSS feeds.
         """
         logger.info(f"🔍 Searching YouTube for: '{query}'")
+
+        if not self.api_key:
+            logger.warning(
+                "YOUTUBE_API_KEY is not set — falling back to channel RSS, which "
+                "YouTube frequently rate-limits from CI runners."
+            )
 
         if self.api_key:
             results = self._search_via_api(query)

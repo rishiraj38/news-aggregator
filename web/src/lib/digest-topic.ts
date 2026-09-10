@@ -12,22 +12,31 @@ const PACK_TO_LANE = {
   topic_pol_bbcpolitics: "politics",
   topic_sport_bbcsport: "sports",
   topic_cricket_bbccricket: "cricket",
+  topic_startup_ychn: "startups",
+  topic_tech_general: "technology",
+  topic_tech_research: "technology",
 } as const;
+
+/** Per-subscriber keyword lanes are stored as `kw_<slug>_<hash>` article types. */
+const KEYWORD_PREFIX = "kw_";
 
 export type DigestLane =
   | "technology"
+  | "startups"
   | "politics"
   | "sports"
   | "cricket"
+  | "keyword"
   | "other";
 
 export function digestLaneFromArticleType(articleType: string): DigestLane {
   const at = articleType.trim();
+  if (at.startsWith(KEYWORD_PREFIX)) return "keyword";
   if (TECH_SOURCES.has(at)) return "technology";
   if (at in PACK_TO_LANE) {
     return PACK_TO_LANE[at as keyof typeof PACK_TO_LANE] as Exclude<
       DigestLane,
-      "technology" | "other"
+      "keyword" | "other"
     >;
   }
   return "other";
@@ -75,6 +84,22 @@ export function digestLaneStyles(articleType: string): {
         cardRail: "border-l-[4px] border-l-sky-400/95",
         borderAccent: "border-l-[4px] border-l-sky-400/95",
       };
+    case "startups":
+      return {
+        lane,
+        pill:
+          "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-orange-500/[0.1] border border-orange-400/35 text-orange-300",
+        cardRail: "border-l-[4px] border-l-orange-400/95",
+        borderAccent: "border-l-[4px] border-l-orange-400/95",
+      };
+    case "keyword":
+      return {
+        lane,
+        pill:
+          "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-violet-500/[0.12] border border-violet-400/35 text-violet-300",
+        cardRail: "border-l-[4px] border-l-violet-400/95",
+        borderAccent: "border-l-[4px] border-l-violet-400/95",
+      };
     default:
       return {
         lane,
@@ -96,6 +121,10 @@ export function digestLaneHumanLabel(lane: DigestLane): string {
       return "Sports";
     case "cricket":
       return "Cricket";
+    case "startups":
+      return "Startups";
+    case "keyword":
+      return "Your keyword";
     default:
       return "Feed";
   }

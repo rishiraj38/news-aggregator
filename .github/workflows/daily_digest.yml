@@ -3,37 +3,47 @@ name: Daily AI Digest
 on:
   schedule:
     - cron: "30 10 * * *" # Runs daily at 10:30 UTC (4:00 PM IST)
-  workflow_dispatch: # Allows manual trigger from GitHub UI
-  # Cron schedule: Runs daily (best effort by GitHub)
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: "Look-back window in hours"
+        required: false
+        default: "72"
+      top_n:
+        description: "Articles per subscriber email"
+        required: false
+        default: "10"
+      fail_on_zero_emails:
+        description: "Fail the run if subscribers were processed but nothing was sent"
+        type: boolean
+        required: false
+        default: true
+
+concurrency:
+  # Never let a manual run and the cron collide on the same database.
+  group: daily-digest
+  cancel-in-progress: false
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
+    # The pipeline used to be able to hang indefinitely on YouTube/Groq retries.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Cache scrape timestamp
-        uses: actions/cache@v3
-        with:
-          path: .last_scrape
-          key: scrape-cache-${{ github.run_id }}
-          restore-keys: |
-            scrape-cache-
+          python-version: "3.12"
 
       - name: Install uv (Fast Package Manager)
-        uses: astral-sh/setup-uv@v1
-
+        uses: astral-sh/setup-uv@v5
 
       - name: Install Dependencies
-        run: |
-          uv pip install -r requirements.txt --system
+        run: uv pip install -r requirements.txt --system
 
       - name: Run Daily Pipeline
         env:
@@ -42,14 +52,40 @@ jobs:
           GROQ_API_KEY2: ${{ secrets.GROQ_API_KEY2 }}
           MY_EMAIL: ${{ secrets.MY_EMAIL }}
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+
+          # Webshare is optional. The scrapers fall back to direct connections
+          # when the proxy is unreachable, so an expired plan no longer wipes
+          # out the entire ingest. Set DISABLE_SCRAPER_PROXY=true to skip it.
           WEBSHARE_USERNAME: ${{ secrets.WEBSHARE_USERNAME }}
           WEBSHARE_PASSWORD: ${{ secrets.WEBSHARE_PASSWORD }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          DISABLE_SCRAPER_PROXY: ${{ vars.DISABLE_SCRAPER_PROXY }}
+
+          # Pipeline tuning
+          PIPELINE_HOURS: ${{ github.event.inputs.hours || '72' }}
+          PIPELINE_TOP_N: ${{ github.event.inputs.top_n || '10' }}
+          PIPELINE_FORCE_SCRAPE: "true"
+          DIGEST_BATCH_LIMIT: ${{ vars.DIGEST_BATCH_LIMIT || '80' }}
+          CURATOR_CHUNK_SIZE: ${{ vars.CURATOR_CHUNK_SIZE || '12' }}
+          CURATOR_MAX_CANDIDATES: ${{ vars.CURATOR_MAX_CANDIDATES || '60' }}
+          GROQ_CHUNK_SLEEP_SECONDS: ${{ vars.GROQ_CHUNK_SLEEP_SECONDS || '8' }}
+          FAIL_ON_ZERO_EMAILS: ${{ github.event.inputs.fail_on_zero_emails || 'true' }}
+
           # Newsletter footers / CTAs (Repository variables — public URLs)
           HELIX_WEBSITE_URL: ${{ vars.HELIX_WEBSITE_URL }}
           HELIX_PRICING_URL: ${{ vars.HELIX_PRICING_URL }}
           HELIX_INSTAGRAM_URL: ${{ vars.HELIX_INSTAGRAM_URL }}
           HELIX_INSTAGRAM_HANDLE: ${{ vars.HELIX_INSTAGRAM_HANDLE }}
 
+        run: python -m app.daily_runner
+
+      - name: Report missing secrets
+        if: failure()
         run: |
-          python -m app.daily_runner
+          echo "Secret presence (names only, never values):"
+          echo "  DATABASE_URL set: ${{ secrets.DATABASE_URL != '' }}"
+          echo "  GROQ_API_KEY set: ${{ secrets.GROQ_API_KEY != '' }}"
+          echo "  GROQ_API_KEY2 set: ${{ secrets.GROQ_API_KEY2 != '' }}"
+          echo "  MY_EMAIL set: ${{ secrets.MY_EMAIL != '' }}"
+          echo "  APP_PASSWORD set: ${{ secrets.APP_PASSWORD != '' }}"
+          echo "  YOUTUBE_API_KEY set: ${{ secrets.YOUTUBE_API_KEY != '' }}"
