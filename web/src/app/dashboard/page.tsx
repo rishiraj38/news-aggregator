@@ -177,6 +177,17 @@ export default async function Dashboard() {
   const customizable = canCustomize(dbUser?.role, dbUser?.plan);
   const keywordsAllowed = canTrackKeywords(dbUser?.role, dbUser?.plan);
   const isAdmin = isAdminRole(dbUser?.role);
+  const proRequested = Boolean(dbUser?.pro_requested_at);
+  // Upgrade requests awaiting review, surfaced on the admin's own dashboard.
+  const pendingProRequests = isAdmin
+    ? await db.user.count({
+        where: {
+          pro_requested_at: { not: null },
+          role: { not: "admin" },
+          OR: [{ plan: null }, { plan: { not: "pro" } }],
+        },
+      })
+    : 0;
   if (!customizable) topicIdsForPicker = defaultTopics;
   if (!keywordsAllowed) keywordsForPicker = [];
 
@@ -238,6 +249,14 @@ export default async function Dashboard() {
               <div className="inline-flex items-center gap-3 rounded-2xl border border-line bg-surface-raised/85 px-4 py-3.5 text-sm font-medium text-ink-muted backdrop-blur-sm shadow-[0_18px_50px_-32px_rgb(15_23_42/1)]">
                 <Sparkles className="w-4 h-4 text-accent shrink-0" strokeWidth={1.75} />
                 {TIER_LABELS[tier]} plan
+                {tier === "free" && (
+                  <Link
+                    href="/upgrade"
+                    className="ml-1 text-xs font-semibold text-violet-300 hover:text-violet-200"
+                  >
+                    Upgrade
+                  </Link>
+                )}
               </div>
             )}
           </div>
@@ -346,6 +365,11 @@ export default async function Dashboard() {
                 <p className="text-xs text-ink-muted mt-1">
                   Members and plans, the daily email log with contents, and pipeline health.
                 </p>
+                {pendingProRequests > 0 && (
+                  <p className="mt-2 text-xs font-semibold text-violet-300">
+                    {pendingProRequests} pending Pro request{pendingProRequests === 1 ? "" : "s"} to review
+                  </p>
+                )}
               </div>
               <Link
                 href="/admin"
@@ -370,6 +394,7 @@ export default async function Dashboard() {
             <div className="min-w-0 flex-1">
               <ProLock
                 locked={!customizable}
+                requested={proRequested}
                 title="Topic bundles are a Pro feature"
                 pitch="Choose exactly which bundles land in your briefing — technology, startups, politics, sports, or cricket."
                 note="Your Free plan already includes every bundle."
@@ -388,6 +413,7 @@ export default async function Dashboard() {
             <div className="min-w-0 flex-1">
               <ProLock
                 locked={!keywordsAllowed}
+                requested={proRequested}
                 title="Keyword tracking is a Pro feature"
                 pitch="Track anything — a company, a person, a technology — and get a private news search for it in every briefing."
               >

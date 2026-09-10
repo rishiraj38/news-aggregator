@@ -74,6 +74,7 @@ model User {
   subscription_status String       @default("trial") @db.VarChar
   role            String           @default("user") @db.VarChar
   plan            String?          @default("free") @db.VarChar
+  pro_requested_at DateTime?       @db.Timestamp(6)
   admin_welcome_sent String?       @default("false") @db.VarChar
   created_at      DateTime?        @db.Timestamp(6)
   recommendations Recommendation[]

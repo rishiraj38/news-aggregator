@@ -427,7 +427,7 @@ def main() -> int:
 
     from app.database.connection import engine
     from app.database.models import Base
-    from app.database.schema_migrations import ensure_image_url_columns, ensure_instagram_posted_column, ensure_plan_column
+    from app.database.schema_migrations import ensure_image_url_columns, ensure_instagram_posted_column, ensure_plan_column, ensure_pro_request_column
     from app.database.repository import Repository
     from app.services.user_service import UserService
     from app.agent.curator_agent import CuratorAgent
@@ -439,6 +439,7 @@ def main() -> int:
     ensure_image_url_columns()
     ensure_instagram_posted_column()
     ensure_plan_column()
+    ensure_pro_request_column()
 
     logo_png = os.getenv("HELIX_LOGO_PATH", "").strip() or None
 

@@ -24,6 +24,8 @@ export type AdminMember = {
   last_delivery: DeliverySummary;
   sent_30d: number;
   failed_30d: number;
+  /** Set while a Free member has an unanswered request for Pro. */
+  pro_requested_at: string | null;
 };
 
 export type AdminTotals = {
@@ -33,6 +35,7 @@ export type AdminTotals = {
   admin: number;
   expired: number;
   paused: number;
+  pro_requests: number;
 };
 
 export type DeliveryArticle = {
@@ -71,4 +74,5 @@ export type MemberPatch = Partial<{
   subscription_status: string;
   role: string;
   is_active: boolean;
+  decline_pro_request: boolean;
 }>;

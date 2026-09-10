@@ -275,14 +275,13 @@ featured:
                 Plans that stay out of your way
               </h2>
               <p className="text-ink-muted leading-[1.7] text-[1.05rem]">
-                Start where you are. Upgrade when the archive, keyword depth, and delivery windows
-                become part of your muscle memory.
+                Start where you are. Upgrade when you want to pick your own bundles and track the topics you care about.
               </p>
             </header>
 
             <div className="grid md:grid-cols-2 gap-6 lg:gap-8 max-w-4xl">
               <article className="rounded-2xl border border-line bg-surface-deep/80 p-9 flex flex-col ring-1 ring-white/[0.03]">
-                <h3 className="font-display text-xl mb-2">Explorer</h3>
+                <h3 className="font-display text-xl mb-2">Free</h3>
                 <p className="font-display text-4xl text-ink mb-1">$0</p>
                 <p className="text-sm text-ink-muted mb-9">Lean daily briefing - perfect for taste-testing.</p>
                 <ul className="space-y-3 text-sm text-ink-muted mb-11 grow">
@@ -307,7 +306,7 @@ featured:
                 <div className="absolute top-0 right-0 px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] bg-accent text-surface-deep">
                   Most chosen
                 </div>
-                <h3 className="font-display text-xl mb-2">Full access</h3>
+                <h3 className="font-display text-xl mb-2">Pro</h3>
                 <p className="font-display text-4xl text-ink mb-1">
                   $7<span className="text-lg font-sans font-normal text-ink-muted">/mo</span>
                 </p>
@@ -316,10 +315,10 @@ featured:
                 </p>
                 <ul className="space-y-3 text-sm text-ink-muted mb-11 grow">
                   {[
-                    "Full digest archive on the web",
-                    "Custom keyword tracking",
-                    "Paper + repo oriented pulls",
-                    "Priority delivery windows",
+                    "Choose exactly which topic bundles you get",
+                    "Private keyword tracking across news and Hacker News",
+                    "Keyword matches reserved in every briefing",
+                    "No trial expiry",
                   ].map((t) => (
                     <li key={t} className="flex gap-3">
                       <Check className="w-4 h-4 shrink-0 mt-0.5 text-accent" strokeWidth={2} />
@@ -328,10 +327,10 @@ featured:
                   ))}
                 </ul>
                 <Link
-                  href="/sign-up"
+                  href="/upgrade"
                   className="inline-flex justify-center items-center min-h-11 rounded-xl bg-accent text-surface-deep text-sm font-semibold hover:brightness-110 transition-[filter]"
                 >
-                  Start seven-day trial
+                  Get Pro
                 </Link>
               </article>
             </div>

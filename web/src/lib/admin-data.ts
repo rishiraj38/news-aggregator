@@ -50,6 +50,7 @@ export function serializeMember(
     topics: canonicalTopicSelection(prefs.topics ?? null),
     keywords: canonicalKeywordSelection(prefs.keywords ?? []),
     trial_exempt: isTrialExempt(user.role, user.plan, user.subscription_status),
+    pro_requested_at: iso(user.pro_requested_at),
     ...stats,
   };
 }

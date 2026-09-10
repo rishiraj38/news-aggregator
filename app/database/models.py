@@ -88,6 +88,7 @@ class User(Base):
     subscription_status = Column(String, default="trial")
     role = Column(String, default="user")
     plan = Column(String, default="free")  # "free" | "pro"; role="admin" overrides
+    pro_requested_at = Column(DateTime, nullable=True)  # Free user asked for Pro; cleared on approve/decline
     admin_welcome_sent = Column(String, default="false") # Boolean stored as string in this repo's pattern?
     trial_warning_2_sent = Column(String, default="false")
     trial_warning_1_sent = Column(String, default="false")

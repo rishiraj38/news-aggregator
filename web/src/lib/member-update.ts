@@ -14,6 +14,7 @@ export type MemberUpdateData = {
   role?: string;
   subscription_status?: string;
   is_active?: string;
+  pro_requested_at?: null;
 };
 
 export type MemberUpdatePlan =
@@ -28,7 +29,8 @@ export type MemberUpdatePlan =
  * directly. The caller supplies `adminCount`, the current number of admins.
  *
  * Accepts `tier` (the console's single Free / Pro / Admin control), or the
- * lower-level `role` / `plan`, but not both in one request.
+ * lower-level `role` / `plan`, but not both in one request. `decline_pro_request`
+ * clears a pending upgrade request; moving someone to Pro or Admin clears it too.
  */
 export function planMemberUpdate(
   body: unknown,
@@ -92,6 +94,13 @@ export function planMemberUpdate(
     data.is_active = b.is_active ? "true" : "false";
   }
 
+  if (has("decline_pro_request")) {
+    if (b.decline_pro_request !== true) {
+      return { ok: false, status: 400, error: "decline_pro_request must be true" };
+    }
+    data.pro_requested_at = null;
+  }
+
   if (Object.keys(data).length === 0) {
     return { ok: false, status: 400, error: "Nothing to update" };
   }
@@ -107,6 +116,11 @@ export function planMemberUpdate(
   }
   if (demoting && adminCount <= 1) {
     return { ok: false, status: 409, error: "Can't demote the last remaining admin." };
+  }
+
+  // Granting Pro (or admin) answers any pending request.
+  if (data.role === "admin" || data.plan === "pro") {
+    data.pro_requested_at = null;
   }
 
   return { ok: true, data };

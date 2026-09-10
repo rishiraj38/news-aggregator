@@ -93,10 +93,12 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 ensure_image_url_columns,
                 ensure_lookup_indexes,
                 ensure_plan_column,
+                ensure_pro_request_column,
             )
 
             ensure_image_url_columns()
             ensure_plan_column()
+            ensure_pro_request_column()
             ensure_lookup_indexes()
             log_progress("✓ Schema migrations applied (image_url, plan, lookup indexes)")
         except Exception as e:
@@ -561,11 +563,16 @@ if __name__ == "__main__":
     # Ensure tables exists
     from app.database.models import Base
     from app.database.connection import engine
-    from app.database.schema_migrations import ensure_image_url_columns, ensure_plan_column
+    from app.database.schema_migrations import (
+        ensure_image_url_columns,
+        ensure_plan_column,
+        ensure_pro_request_column,
+    )
 
     Base.metadata.create_all(engine)
     ensure_image_url_columns()
     ensure_plan_column()
+    ensure_pro_request_column()
 
     hours = int(os.getenv("PIPELINE_HOURS", "72") or 72)
     top_n = int(os.getenv("PIPELINE_TOP_N", "10") or 10)

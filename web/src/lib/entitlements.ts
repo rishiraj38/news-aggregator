@@ -50,6 +50,11 @@ export function canTrackKeywords(role: unknown, plan: unknown): boolean {
   return effectiveTier(role, plan) !== "free";
 }
 
+/** Only Free subscribers have anything to request. */
+export function canRequestPro(role: unknown, plan: unknown): boolean {
+  return effectiveTier(role, plan) === "free";
+}
+
 /**
  * Whether the pipeline's 27-day trial clock may expire this subscriber. An
  * admin-set `active` status counts, otherwise the next run would recompute

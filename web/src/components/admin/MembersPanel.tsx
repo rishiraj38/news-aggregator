@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Loader2, RefreshCw, Save, Search, Undo2 } from "lucide-react";
+import { Check, ChevronDown, Loader2, RefreshCw, Save, Search, Sparkles, Undo2, X } from "lucide-react";
 import type { AdminMember, AdminTotals } from "@/lib/admin-types";
 import {
   ALLOWED_STATUSES,
@@ -18,18 +18,44 @@ import { useAdminJson } from "./useAdminJson";
 type MembersResponse = { members: AdminMember[]; totals: AdminTotals; stats_window_days: number };
 
 /** Unsaved edits for one member — only the fields that differ from what's saved. */
-type Draft = { tier?: Tier; subscription_status?: string; is_active?: boolean };
+type Draft = {
+  tier?: Tier;
+  subscription_status?: string;
+  is_active?: boolean;
+  decline_request?: boolean;
+};
 
 const selectClass =
   "min-h-9 rounded-lg border border-line bg-surface-raised px-2 text-xs text-ink focus:border-accent/45 focus:outline-none disabled:opacity-45 cursor-pointer";
 const changedRing = "ring-2 ring-accent/60 border-accent/60";
 
+function hasPendingRequest(m: AdminMember): boolean {
+  return m.tier === "free" && m.pro_requested_at !== null;
+}
+
 function describeChange(m: AdminMember, d: Draft): string {
   const parts: string[] = [];
-  if (d.tier !== undefined) parts.push(`${TIER_LABELS[m.tier]} → ${TIER_LABELS[d.tier]}`);
+  if (d.tier !== undefined) {
+    parts.push(
+      d.tier === "pro" && hasPendingRequest(m)
+        ? "approve Pro request"
+        : `${TIER_LABELS[m.tier]} → ${TIER_LABELS[d.tier]}`,
+    );
+  }
+  if (d.decline_request) parts.push("decline Pro request");
   if (d.subscription_status !== undefined) parts.push(`${m.subscription_status} → ${d.subscription_status}`);
   if (d.is_active !== undefined) parts.push(d.is_active ? "resume emails" : "pause emails");
   return `• ${m.name} (${m.email}): ${parts.join(", ")}`;
+}
+
+/** The API body for a draft. `decline_request` maps to `decline_pro_request`. */
+function toRequestBody(d: Draft) {
+  return {
+    tier: d.tier,
+    subscription_status: d.subscription_status,
+    is_active: d.is_active,
+    decline_pro_request: d.decline_request ? true : undefined,
+  };
 }
 
 export default function MembersPanel({ currentAdminId }: { currentAdminId: string }) {
@@ -45,16 +71,23 @@ export default function MembersPanel({ currentAdminId }: { currentAdminId: strin
   const [saveMessage, setSaveMessage] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [onlyRequests, setOnlyRequests] = useState(false);
 
   const baseMembers = useMemo(
     () => (data?.members ?? []).map((m) => ({ ...m, ...overrides[m.id] })),
     [data, overrides],
   );
 
+  const pendingRequests = baseMembers.filter(hasPendingRequest).length;
+
   const visibleMembers = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? baseMembers.filter((m) => `${m.name} ${m.email}`.toLowerCase().includes(q)) : baseMembers;
-  }, [baseMembers, query]);
+    return baseMembers.filter(
+      (m) =>
+        (!onlyRequests || hasPendingRequest(m)) &&
+        (!q || `${m.name} ${m.email}`.toLowerCase().includes(q)),
+    );
+  }, [baseMembers, query, onlyRequests]);
 
   const dirtyCount = Object.keys(drafts).length;
 
@@ -86,6 +119,10 @@ export default function MembersPanel({ currentAdminId }: { currentAdminId: strin
       if (next.tier === m.tier) delete next.tier;
       if (next.subscription_status === m.subscription_status) delete next.subscription_status;
       if (next.is_active === m.is_active) delete next.is_active;
+      // Approving (moving to Pro or Admin) supersedes a staged decline, and vice versa.
+      if (patch.tier !== undefined && patch.tier !== "free") delete next.decline_request;
+      if (patch.decline_request) delete next.tier;
+      if (!next.decline_request) delete next.decline_request;
       const out = { ...prev };
       if (Object.keys(next).length === 0) delete out[m.id];
       else out[m.id] = next;
@@ -150,7 +187,7 @@ export default function MembersPanel({ currentAdminId }: { currentAdminId: strin
         const res = await fetch(`/api/admin/members/${encodeURIComponent(m.id)}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(d),
+          body: JSON.stringify(toRequestBody(d)),
         });
         const json = await res.json().catch(() => ({}));
         if (!res.ok) {
@@ -171,6 +208,7 @@ export default function MembersPanel({ currentAdminId }: { currentAdminId: strin
             subscription_status: u.subscription_status,
             is_active: u.is_active,
             trial_exempt: u.trial_exempt,
+            pro_requested_at: u.pro_requested_at,
           },
         }));
         setDrafts((prev) => {
@@ -203,20 +241,46 @@ export default function MembersPanel({ currentAdminId }: { currentAdminId: strin
     ["Free", totals.free],
     ["Pro", totals.pro],
     ["Admins", totals.admin],
+    ["Pro requests", pendingRequests],
     ["Expired", totals.expired],
     ["Paused", totals.paused],
   ];
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
         {cards.map(([label, value]) => (
-          <div key={label} className="rounded-xl border border-line bg-surface-raised/70 px-3 py-3">
+          <div
+            key={label}
+            className={cn(
+              "rounded-xl border px-3 py-3",
+              label === "Pro requests" && value > 0
+                ? "border-violet-400/40 bg-violet-500/[0.08]"
+                : "border-line bg-surface-raised/70",
+            )}
+          >
             <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-ink-faint">{label}</div>
             <div className="font-display text-2xl tabular-nums text-ink mt-1">{value}</div>
           </div>
         ))}
       </div>
+
+      {pendingRequests > 0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-2xl border border-violet-400/35 bg-violet-500/[0.06] px-4 py-3">
+          <p className="flex-1 flex items-center gap-2 text-sm text-ink">
+            <Sparkles className="w-4 h-4 text-violet-300 shrink-0" strokeWidth={2} aria-hidden />
+            {pendingRequests} member{pendingRequests === 1 ? " has" : "s have"} requested Pro access.
+          </p>
+          <button
+            type="button"
+            aria-pressed={onlyRequests}
+            onClick={() => setOnlyRequests((v) => !v)}
+            className="inline-flex items-center justify-center min-h-9 px-4 rounded-xl border border-violet-400/40 text-sm font-semibold text-violet-200 hover:bg-violet-500/[0.12] transition-colors cursor-pointer"
+          >
+            {onlyRequests ? "Show all members" : "Review requests"}
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
         <label className="relative flex-1">
@@ -282,6 +346,9 @@ export default function MembersPanel({ currentAdminId }: { currentAdminId: strin
               );
               const isSelf = m.id === currentAdminId;
               const open = openId === m.id;
+              const requested = hasPendingRequest(m);
+              const approving = requested && d?.tier !== undefined && d.tier !== "free";
+              const declining = requested && Boolean(d?.decline_request);
 
               return (
                 <Fragment key={m.id}>
@@ -299,6 +366,41 @@ export default function MembersPanel({ currentAdminId }: { currentAdminId: strin
                         {isSelf && <span className="text-[10px] text-ink-faint">(you)</span>}
                       </div>
                       <div className="text-xs text-ink-faint break-all">{m.email}</div>
+
+                      {requested && (
+                        <div className="mt-2 rounded-lg border border-violet-400/30 bg-violet-500/[0.07] px-2.5 py-2 space-y-1.5">
+                          <div className="text-[11px] text-violet-200">
+                            Requested Pro · {formatWhen(m.pro_requested_at)}
+                          </div>
+                          {approving ? (
+                            <div className="text-[11px] font-semibold text-emerald-300">Will approve on save</div>
+                          ) : declining ? (
+                            <div className="text-[11px] font-semibold text-rose-300">Will decline on save</div>
+                          ) : (
+                            <div className="flex gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => applyDraft(m, { tier: "pro" })}
+                                disabled={savingAll}
+                                className="inline-flex items-center gap-1 rounded-md bg-violet-500 px-2 py-1 text-[11px] font-semibold text-white hover:brightness-110 disabled:opacity-45 cursor-pointer"
+                              >
+                                <Check className="w-3 h-3" strokeWidth={2.5} aria-hidden />
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => applyDraft(m, { decline_request: true })}
+                                disabled={savingAll}
+                                className="inline-flex items-center gap-1 rounded-md border border-line-strong px-2 py-1 text-[11px] font-semibold text-ink-muted hover:text-ink disabled:opacity-45 cursor-pointer"
+                              >
+                                <X className="w-3 h-3" strokeWidth={2.5} aria-hidden />
+                                Decline
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {dirty && (
                         <div className="mt-1.5 flex items-center gap-2">
                           <span className="rounded-full border border-accent/45 bg-accent-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-ink">
@@ -413,7 +515,11 @@ export default function MembersPanel({ currentAdminId }: { currentAdminId: strin
             })}
           </tbody>
         </table>
-        {visibleMembers.length === 0 && <PanelMessage>No members match &ldquo;{query}&rdquo;.</PanelMessage>}
+        {visibleMembers.length === 0 && (
+          <PanelMessage>
+            {onlyRequests && !query ? "No pending Pro requests." : <>No members match &ldquo;{query}&rdquo;.</>}
+          </PanelMessage>
+        )}
       </div>
 
       {dirtyCount > 0 && (

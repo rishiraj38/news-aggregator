@@ -42,6 +42,7 @@ export async function GET() {
     admin: members.filter((m) => m.tier === "admin").length,
     expired: members.filter((m) => m.subscription_status === "expired").length,
     paused: members.filter((m) => !m.is_active).length,
+    pro_requests: members.filter((m) => m.tier === "free" && m.pro_requested_at !== null).length,
   };
 
   return Response.json({ members, totals, stats_window_days: STATS_WINDOW_DAYS });

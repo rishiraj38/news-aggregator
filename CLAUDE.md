@@ -155,7 +155,7 @@ publish_instagram_card.py
 | `anthropic_articles` | `guid` | Anthropic blog RSS articles |
 | `general_rss_articles` | `guid` | TechCrunch, The Verge, topic-pack RSS. `source` column identifies origin |
 | `digests` | `id` (uuid) | LLM-generated title + summary per article. `article_type` + `article_id` link back |
-| `users` | `id` (Clerk id) | Subscribers: JSON preferences, trial tracking, `role` (user/admin), `plan` (free/pro) |
+| `users` | `id` (Clerk id) | Subscribers: JSON preferences, trial tracking, `role` (user/admin), `plan` (free/pro), `pro_requested_at` |
 | `recommendations` | `id` | Per-user ranked digest entries — what was *picked* |
 | `email_deliveries` | `id` (uuid) | Every email the pipeline attempted: kind, status, error, digest ids — what actually *went out* |
 | `pipeline_runs` | `id` | Execution logs |
@@ -226,6 +226,8 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 Additive only, no Alembic, safe to run on every startup:
 - `ensure_image_url_columns()` — `image_url` on article/digest tables
 - `ensure_instagram_posted_column()` — `posted_to_instagram` on digests
+- `ensure_plan_column()` — `users.plan`, backfilled to `free`
+- `ensure_pro_request_column()` — `users.pro_requested_at`, NULL for existing rows
 - `ensure_lookup_indexes()` — `CREATE INDEX IF NOT EXISTS` for the anti-join, per-source lookup, recent-digest window, and per-user recommendations. Index failures are logged, never raised — an index is an optimisation, not a correctness requirement.
 
 ### Keyword Lanes (`app/topic_packs/keywords.py`)
@@ -420,6 +422,14 @@ Derived from two columns — keep the Python and TypeScript copies in step:
 - No payment integration yet: Pro is granted by an admin in the console.
 - Free subscribers still *see* the bundle and keyword sections, rendered as locked Pro previews by `web/src/components/ProLock.tsx` (an `inert`, `aria-hidden` preview under an overlay) rather than hidden.
 
+### Upgrade flow (no payments yet)
+1. A Free user hits a locked section → **Upgrade to Pro** → `/upgrade` (Free vs Pro comparison).
+2. **Request Pro access** → `POST /api/me/upgrade-request` sets `users.pro_requested_at` (idempotent; keeps the first timestamp). `DELETE` withdraws it.
+3. Admins see a pending count on their dashboard and a **Pro requests** filter in Members, with **Approve** (stages Tier → Pro) and **Decline** (stages `decline_pro_request`), committed through the normal Save changes flow.
+4. `planMemberUpdate()` clears `pro_requested_at` whenever a member is moved to Pro or Admin, so approving answers the request.
+
+Requests deliberately don't grant Pro instantly — with no payment, everyone would click it. **When payments are added**, a successful checkout should set `plan="pro"` directly; the request step is the only piece that changes.
+
 ### Admin console (`web/src/app/admin/`)
 Server-rendered page that redirects non-admins; every endpoint it calls re-checks with `requireAdmin()` from `web/src/lib/admin-auth.ts`.
 
@@ -471,6 +481,7 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_curator_resilience.py` | `json_validate_failed` detection, split-recovery, and that a failed chunk never costs the whole email |
 | `test_youtube_search.py` | View-count filtering, ordering, shorts exclusion, and graceful API failure |
 | `test_entitlements.py` | Tier resolution, Free getting the fixed briefing server-side, Pro-only keyword lanes, trial exemption, and the delivery log |
+| `test_migrations.py` | `plan` backfills to Free, `pro_requested_at` is NULL for existing rows, and migrations are idempotent |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads

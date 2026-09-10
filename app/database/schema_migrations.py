@@ -46,6 +46,16 @@ def ensure_plan_column() -> None:
     _add_column_if_missing("users", "plan", col_type)
 
 
+def ensure_pro_request_column() -> None:
+    """Add users.pro_requested_at.
+
+    Set when a Free subscriber requests Pro from the dashboard, and cleared when
+    an admin approves or declines it. Stands in for a checkout until payments
+    exist. Existing rows are NULL, meaning "no pending request".
+    """
+    _add_column_if_missing("users", "pro_requested_at", "TIMESTAMP")
+
+
 def ensure_instagram_posted_column() -> None:
     """Add posted_to_instagram to digests table (tracks which stories were already posted)."""
     col_type = "TEXT" if engine.dialect.name == "sqlite" else "VARCHAR"
