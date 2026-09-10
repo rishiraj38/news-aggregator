@@ -438,6 +438,12 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
     results["end_time"] = end_time.isoformat()
     results["duration_seconds"] = duration
 
+    # Tell someone when the run is broken. Silence used to look exactly like
+    # success, which is how weeks of zero-email runs went unnoticed.
+    from app.services.alerts import send_pipeline_alert
+
+    send_pipeline_alert(results)
+
     logger.info("\n" + "=" * 60)
     logger.info("Pipeline Summary")
     logger.info("=" * 60)

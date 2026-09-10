@@ -92,8 +92,14 @@ export default function BriefingRevealOverlay({
     }
 
     persistRef.current = v;
-    setVariant(v);
-    setOpen(true);
+    // Batched as a transition, matching how `mounted` and `entered` are set in
+    // this component. A synchronous setState here triggers cascading renders
+    // (react-hooks/set-state-in-effect); locking body scroll stays synchronous
+    // because that is an external system, which is what effects are for.
+    startTransition(() => {
+      setVariant(v);
+      setOpen(true);
+    });
     document.body.style.overflow = "hidden";
 
     const rafIds: number[] = [];

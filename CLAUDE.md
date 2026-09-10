@@ -290,6 +290,8 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 | `PIPELINE_TOP_N` | `10` | Articles per subscriber email |
 | `PIPELINE_FORCE_SCRAPE` | – | `true` ignores the 60-min `.last_scrape` cooldown |
 | `FAIL_ON_ZERO_EMAILS` | `true` | Exit non-zero when subscribers were processed but nothing sent |
+| `PIPELINE_ALERTS_ENABLED` | `true` | Email an alert when a run looks broken |
+| `PIPELINE_ALERT_EMAIL` | `MY_EMAIL` | Comma-separated alert recipients |
 | `GROQ_CHUNK_SLEEP_SECONDS` | `10` | Sleep between curator batches |
 | `GROQ_AFTER_KEY_ROTATE_SLEEP` | `2` | Pause after key failover |
 | `HELIX_WEBSITE_URL` | – | Newsletter footer link |
@@ -376,6 +378,24 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 
 ---
 
+## Alerting (`app/services/alerts.py`)
+
+The pipeline reports its own failures by email over the SMTP account it already
+uses for digests — no extra service or credential. Called once at the end of
+every run from `daily_runner`.
+
+`detect_pipeline_problems()` deliberately distinguishes an incident from a quiet
+day. It alerts on:
+- an explicit pipeline error
+- **every** source returning 0 (the dead-proxy signature)
+- at least half (min 3) of sources returning 0
+- subscribers processed but **0 emails delivered** (the September regression)
+- all digest generations failing (LLM provider down)
+
+It stays silent for a quiet feed or two, and for a run with no active
+subscribers. `send_pipeline_alert()` never raises — an alert failing must not
+take down a run that is already failing.
+
 ## Tests (`tests/`)
 
 Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `python -m pytest`.
@@ -385,6 +405,7 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_keywords.py` | Keyword normalization, source-key stability, per-subscriber routing privacy |
 | `test_digest_selection.py` | Recency ordering + source round-robin (the BBC Sport monopoly regression) |
 | `test_personalization.py` | Keyword slot reserve, topic interleaving, and `UserSnapshot` surviving a session reconnect (the zero-email regression) |
+| `test_alerts.py` | Which run shapes count as incidents vs quiet days, and that alerting never raises |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads

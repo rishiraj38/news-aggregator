@@ -71,6 +71,11 @@ jobs:
           GROQ_CHUNK_SLEEP_SECONDS: ${{ vars.GROQ_CHUNK_SLEEP_SECONDS || '8' }}
           FAIL_ON_ZERO_EMAILS: ${{ github.event.inputs.fail_on_zero_emails || 'true' }}
 
+          # Operational alerts: emailed over the same SMTP account as the
+          # digests. Defaults to MY_EMAIL when PIPELINE_ALERT_EMAIL is unset.
+          PIPELINE_ALERTS_ENABLED: ${{ vars.PIPELINE_ALERTS_ENABLED || 'true' }}
+          PIPELINE_ALERT_EMAIL: ${{ secrets.PIPELINE_ALERT_EMAIL }}
+
           # Newsletter footers / CTAs (Repository variables — public URLs)
           HELIX_WEBSITE_URL: ${{ vars.HELIX_WEBSITE_URL }}
           HELIX_PRICING_URL: ${{ vars.HELIX_PRICING_URL }}
