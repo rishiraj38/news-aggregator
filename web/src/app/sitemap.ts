@@ -1,27 +1,18 @@
-import { MetadataRoute } from "next";
+import type { MetadataRoute } from "next";
+import { SITE_URL } from "@/lib/site";
 
+/**
+ * Only the public marketing page belongs here. Sign-in and sign-up are thin
+ * Clerk screens that canonicalize to "/", so listing them sent Google
+ * conflicting signals; every other route requires an account.
+ */
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://helix-seven-eta.vercel.app";
-  const now = new Date();
-
   return [
     {
-      url: `${baseUrl}`,
-      lastModified: now,
-      changeFrequency: "daily",
-      priority: 1.0,
-    },
-    {
-      url: `${baseUrl}/sign-up`,
-      lastModified: now,
+      url: SITE_URL,
+      lastModified: new Date(),
       changeFrequency: "weekly",
-      priority: 0.8,
-    },
-    {
-      url: `${baseUrl}/sign-in`,
-      lastModified: now,
-      changeFrequency: "weekly",
-      priority: 0.7,
+      priority: 1,
     },
   ];
 }

@@ -1,8 +1,0 @@
-User-agent: *
-Allow: /
-Allow: /sign-in
-Allow: /sign-up
-Disallow: /api/
-Disallow: /dashboard
-
-Sitemap: https://helix-seven-eta.vercel.app/sitemap.xml

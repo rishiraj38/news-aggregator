@@ -1,3 +1,4 @@
+import { SITE_URL } from "@/lib/site";
 import nodemailer from "nodemailer";
 
 interface Digest {
@@ -83,7 +84,7 @@ export async function sendWelcomeEmail(user: User, digests: Digest[]) {
 
       <!-- CTA Button -->
       <div style="text-align: center; margin: 40px 0;">
-        <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://helix.vercel.app"}/dashboard" 
+        <a href="${SITE_URL}/dashboard" 
            style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 16px 40px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
           Visit Your Dashboard →
         </a>

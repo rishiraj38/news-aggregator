@@ -3,6 +3,14 @@ import { IBM_Plex_Sans, Newsreader } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Analytics } from "@vercel/analytics/react";
+import {
+  SITE_DESCRIPTION,
+  SITE_GITHUB_HREF,
+  SITE_INSTAGRAM_HREF,
+  SITE_NAME,
+  SITE_TITLE,
+  SITE_URL,
+} from "@/lib/site";
 
 const newsreader = Newsreader({
   subsets: ["latin"],
@@ -17,36 +25,33 @@ const ibmPlexSans = IBM_Plex_Sans({
   display: "swap",
 });
 
-const baseUrl =
-  typeof process.env.NEXT_PUBLIC_APP_URL === "string" && process.env.NEXT_PUBLIC_APP_URL
-    ? process.env.NEXT_PUBLIC_APP_URL
-    : "https://helix-seven-eta.vercel.app";
+// Ownership is verified in Search Console with the HTML file in public/
+// (google12e56e6fa520b24a.html). The meta-tag method uses a *different* token,
+// shown under "HTML tag" in Search Console — the file name is not that token,
+// and emitting it produced an invalid tag. Only emit one when it's configured.
+const googleSiteVerification = process.env.GOOGLE_SITE_VERIFICATION?.trim();
 
 export const metadata: Metadata = {
-  metadataBase: new URL(baseUrl),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "Helix — AI News Curator & Technical Intelligence Dossier",
-    template: "%s · Helix News Curator",
+    default: SITE_TITLE,
+    template: `%s · ${SITE_NAME}`,
   },
-  description:
-    "Helix is an autonomous AI news curator and technical intelligence platform. It ingests, digests, ranks, and delivers high-signal news from transcripts, RSS feeds, and repositories tailored to your profile.",
-  applicationName: "Helix News Curator",
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
   authors: [{ name: "Helix Team" }],
   generator: "Next.js",
   keywords: [
-    "helix news curator",
-    "helix ai news curator",
+    "helix",
     "helix news",
-    "ai news curator",
+    "helix ai news",
+    "helix daily briefing",
+    "personalized news briefing",
+    "daily news digest",
+    "ai news digest",
+    "startup news",
+    "cricket news digest",
     "news curator",
-    "technical news aggregator",
-    "developer news curator",
-    "ai technical digest",
-    "daily ai briefing",
-    "personalized news curation",
-    "engineering newsletter",
-    "automated news curator",
-    "tech news intelligence",
   ],
   alternates: {
     canonical: "/",
@@ -63,11 +68,10 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "Helix — AI News Curator & Technical Intelligence Dossier",
-    description:
-      "Autonomous AI news curator: transcripts, feeds, and repos distilled into personalized ranked briefings. Signal you can defend in a meeting.",
-    url: baseUrl,
-    siteName: "Helix News Curator",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    siteName: SITE_NAME,
     locale: "en_US",
     type: "website",
     images: [
@@ -75,63 +79,66 @@ export const metadata: Metadata = {
         url: "/logo.png",
         width: 512,
         height: 512,
-        alt: "Helix News Curator Logo",
+        alt: "Helix logo",
       },
     ],
   },
   twitter: {
-    card: "summary_large_image",
-    title: "Helix — AI News Curator & Technical Intelligence",
-    description:
-      "Autonomous AI news curator and technical intelligence platform. Ranked morning dossiers tailored to your interests.",
+    // The only share image is the square logo, which "summary_large_image" crops.
+    card: "summary",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
     images: ["/logo.png"],
   },
   icons: {
     icon: "/favicon.ico",
     apple: "/logo.png",
   },
-  verification: {
-    google: "google12e56e6fa520b24a",
-  },
+  ...(googleSiteVerification ? { verification: { google: googleSiteVerification } } : {}),
 };
 
+/**
+ * Google chooses the name it displays for a site largely from WebSite
+ * structured data on the home page, so that node leads, and its name matches the
+ * title and og:site_name exactly.
+ */
 const jsonLd = {
   "@context": "https://schema.org",
   "@graph": [
     {
-      "@type": "WebApplication",
-      "@id": `${baseUrl}/#webapp`,
-      "name": "Helix News Curator",
-      "alternateName": [
-        "Helix",
-        "Helix AI News Curator",
-        "Helix AI News Aggregator",
-        "Helix Technical Intelligence"
-      ],
-      "url": baseUrl,
-      "description":
-        "Autonomous AI news curator that ingests technical RSS feeds, YouTube transcripts, and engineering blogs, digests them with LLMs, and delivers personalized ranked dossiers.",
-      "applicationCategory": "NewsApplication",
-      "operatingSystem": "Web",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      },
-      "screenshot": `${baseUrl}/logo.png`,
-      "softwareVersion": "1.0"
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      name: SITE_NAME,
+      alternateName: ["Helix News", "Helix AI News", "Helix News Curator"],
+      url: SITE_URL,
+      inLanguage: "en",
+      publisher: { "@id": `${SITE_URL}/#organization` },
     },
     {
       "@type": "Organization",
-      "@id": `${baseUrl}/#organization`,
-      "name": "Helix",
-      "url": baseUrl,
-      "logo": `${baseUrl}/logo.png`,
-      "sameAs": [
-        "https://www.instagram.com/formula1_boys_69/"
-      ]
-    }
-  ]
+      "@id": `${SITE_URL}/#organization`,
+      name: SITE_NAME,
+      url: SITE_URL,
+      logo: `${SITE_URL}/logo.png`,
+      sameAs: [SITE_INSTAGRAM_HREF, SITE_GITHUB_HREF],
+    },
+    {
+      "@type": "WebApplication",
+      "@id": `${SITE_URL}/#webapp`,
+      name: SITE_NAME,
+      url: SITE_URL,
+      description:
+        "Personalized daily news briefings. Helix pulls stories from AI labs, the tech press, startups, politics, sports and cricket, summarizes each one, ranks them against your interests, and emails you the best of them every day.",
+      applicationCategory: "NewsApplication",
+      operatingSystem: "Web",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+      publisher: { "@id": `${SITE_URL}/#organization` },
+    },
+  ],
 };
 
 export default function RootLayout({

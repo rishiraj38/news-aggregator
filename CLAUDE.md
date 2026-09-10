@@ -468,6 +468,17 @@ It stays silent for a quiet feed or two, and for a run with no active
 subscribers. `send_pipeline_alert()` never raises — an alert failing must not
 take down a run that is already failing.
 
+## SEO & Search Indexing (`web/`)
+
+All brand and URL signals come from `web/src/lib/site.ts` (`SITE_URL`, `SITE_NAME`, `SITE_TITLE`, `SITE_DESCRIPTION`) — metadata, canonical, sitemap, robots, JSON-LD and the welcome email all read it.
+
+- **Site name**: Google picks the name it shows for a site mostly from **`WebSite` structured data** on the home page, cross-checked against the title and `og:site_name`. All three say "Helix". Keep them identical — mixed names ("Helix" vs "Helix News Curator") make Google less likely to use the one you want.
+- **Search Console verification** uses the HTML file `web/public/google12e56e6fa520b24a.html` (live in production). ⚠️ That file name is **not** a meta-tag token: the "HTML tag" method shows a different token. The layout only emits `google-site-verification` when `GOOGLE_SITE_VERIFICATION` is set; it previously emitted the file name, producing an invalid tag.
+- **Sitemap** lists only `/`. **robots.txt** disallows `/api/`, `/dashboard`, `/admin`, `/upgrade`. Sign-in/sign-up are kept out with a `noindex` in `app/(auth)/layout.tsx` instead of a Disallow — a blocked page's noindex tag is never read.
+- **Don't re-add `public/robots.txt` or `public/sitemap.xml`.** `app/robots.ts` and `app/sitemap.ts` serve those URLs; the static copies went stale unnoticed.
+- **Moving to a custom domain**: set `NEXT_PUBLIC_APP_URL` in Vercel and redeploy — every signal above follows. Then add the new domain as a Search Console property and resubmit the sitemap. `email.ts` previously fell back to `https://helix.vercel.app` (not this site), so with the env unset new signups got a dashboard link to someone else's deployment.
+- Ranking for the bare word "helix" is not realistic (Helix editor, BMC Helix, Figure's Helix, Line 6 Helix). Target "Helix news", "Helix AI news", and the domain name.
+
 ## Tests (`tests/`)
 
 Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `python -m pytest`.

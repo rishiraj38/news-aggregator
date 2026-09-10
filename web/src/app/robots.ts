@@ -1,16 +1,17 @@
-import { MetadataRoute } from "next";
+import type { MetadataRoute } from "next";
+import { SITE_URL } from "@/lib/site";
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://helix-seven-eta.vercel.app";
-
   return {
     rules: [
       {
         userAgent: "*",
-        allow: ["/", "/sign-in", "/sign-up"],
-        disallow: ["/api/", "/dashboard"],
+        allow: "/",
+        // Account-only areas. Sign-in/sign-up stay crawlable so Google can read
+        // their noindex tag; a Disallow would hide that tag from it.
+        disallow: ["/api/", "/dashboard", "/admin", "/upgrade"],
       },
     ],
-    sitemap: `${baseUrl}/sitemap.xml`,
+    sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }
