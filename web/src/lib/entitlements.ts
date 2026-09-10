@@ -59,6 +59,21 @@ export function isTrialExempt(role: unknown, plan: unknown, status: unknown): bo
   return effectiveTier(role, plan) !== "free" || clean(status) === "active";
 }
 
+export const ALLOWED_TIERS = ["free", "pro", "admin"] as const;
+
+/**
+ * The columns a tier maps to. Admin is decided by `role` alone, so promoting to
+ * admin leaves `plan` untouched; moving to Free or Pro sets both.
+ *
+ * The admin console used to expose role and plan as separate controls. Setting
+ * plan=pro on an admin saved correctly but changed nothing visible, because role
+ * overrides plan — so it looked like the change had failed.
+ */
+export function tierToRolePlan(tier: Tier): { role: Role; plan?: Plan } {
+  if (tier === "admin") return { role: "admin" };
+  return { role: "user", plan: tier };
+}
+
 export function isAllowed<T extends string>(allowed: readonly T[], value: unknown): value is T {
   return typeof value === "string" && (allowed as readonly string[]).includes(value);
 }

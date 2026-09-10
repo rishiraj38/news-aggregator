@@ -66,6 +66,7 @@ export type RecommendationDay = {
 export type DeliveryDay = { date: string; sent: number; failed: number };
 
 export type MemberPatch = Partial<{
+  tier: string;
   plan: string;
   subscription_status: string;
   role: string;

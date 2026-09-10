@@ -16,6 +16,7 @@ import {
 import { PipelineStatus } from "@/components/PipelineStatus";
 import TopicBundlePicker from "@/components/TopicBundlePicker";
 import KeywordManager from "@/components/KeywordManager";
+import ProLock from "@/components/ProLock";
 import Link from "next/link";
 import {
   canCustomize,
@@ -366,13 +367,15 @@ export default async function Dashboard() {
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-accent/35 bg-accent-soft/50">
               <Layers className="w-5 h-5 text-accent" strokeWidth={1.85} aria-hidden />
             </div>
-            <div className="min-w-0 flex-1 space-y-3">
-              <TopicBundlePicker initialTopics={topicIdsForPicker} disabled={!customizable} />
-              {!customizable && (
-                <p className="text-[11px] text-ink-faint">
-                  The Free plan includes every bundle. Choosing your own is a Pro feature.
-                </p>
-              )}
+            <div className="min-w-0 flex-1">
+              <ProLock
+                locked={!customizable}
+                title="Topic bundles are a Pro feature"
+                pitch="Choose exactly which bundles land in your briefing — technology, startups, politics, sports, or cricket."
+                note="Your Free plan already includes every bundle."
+              >
+                <TopicBundlePicker initialTopics={topicIdsForPicker} disabled={!customizable} />
+              </ProLock>
             </div>
           </div>
         </section>
@@ -383,11 +386,17 @@ export default async function Dashboard() {
               <Newspaper className="w-5 h-5 text-accent" strokeWidth={1.85} aria-hidden />
             </div>
             <div className="min-w-0 flex-1">
-              <KeywordManager
-                initialKeywords={keywordsForPicker}
-                disabled={!keywordsAllowed}
-                lockedHint="Keyword tracking is a Pro feature."
-              />
+              <ProLock
+                locked={!keywordsAllowed}
+                title="Keyword tracking is a Pro feature"
+                pitch="Track anything — a company, a person, a technology — and get a private news search for it in every briefing."
+              >
+                <KeywordManager
+                  initialKeywords={keywordsForPicker}
+                  disabled={!keywordsAllowed}
+                  lockedHint="Keyword tracking is a Pro feature."
+                />
+              </ProLock>
             </div>
           </div>
         </section>

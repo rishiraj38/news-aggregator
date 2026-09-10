@@ -2,13 +2,7 @@ import { requireAdmin } from "@/lib/admin-auth";
 import { hydrateDeliveries, iso, serializeMember, utcDayKey } from "@/lib/admin-data";
 import type { RecommendationDay } from "@/lib/admin-types";
 import { db } from "@/lib/db";
-import {
-  ALLOWED_PLANS,
-  ALLOWED_ROLES,
-  ALLOWED_STATUSES,
-  isAdminRole,
-  isAllowed,
-} from "@/lib/entitlements";
+import { planMemberUpdate } from "@/lib/member-update";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -73,10 +67,9 @@ export async function GET(_req: Request, { params }: Ctx) {
 }
 
 /**
- * Change a subscriber's plan, subscription status, role, or active flag.
- *
- * Guard rails: an admin cannot demote or pause themselves (a one-click
- * lockout), and the last remaining admin cannot be demoted by anyone.
+ * Change a subscriber's tier (Free / Pro / Admin), subscription status, or
+ * active flag. Validation and guard rails live in `planMemberUpdate`: an admin
+ * can't demote or pause themselves, and the last admin can't be demoted.
  */
 export async function PATCH(req: Request, { params }: Ctx) {
   const gate = await requireAdmin();
@@ -84,9 +77,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
   const { id } = await params;
 
-  let body: Record<string, unknown>;
+  let body: unknown;
   try {
-    body = (await req.json()) as Record<string, unknown>;
+    body = await req.json();
   } catch {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -96,61 +89,17 @@ export async function PATCH(req: Request, { params }: Ctx) {
     return Response.json({ error: "Member not found" }, { status: 404 });
   }
 
-  const data: { plan?: string; subscription_status?: string; role?: string; is_active?: string } = {};
-
-  if ("plan" in body) {
-    if (!isAllowed(ALLOWED_PLANS, body.plan)) {
-      return Response.json({ error: `plan must be one of: ${ALLOWED_PLANS.join(", ")}` }, { status: 400 });
-    }
-    data.plan = body.plan;
-  }
-  if ("subscription_status" in body) {
-    if (!isAllowed(ALLOWED_STATUSES, body.subscription_status)) {
-      return Response.json(
-        { error: `subscription_status must be one of: ${ALLOWED_STATUSES.join(", ")}` },
-        { status: 400 },
-      );
-    }
-    data.subscription_status = body.subscription_status;
-  }
-  if ("role" in body) {
-    if (!isAllowed(ALLOWED_ROLES, body.role)) {
-      return Response.json({ error: `role must be one of: ${ALLOWED_ROLES.join(", ")}` }, { status: 400 });
-    }
-    data.role = body.role;
-  }
-  if ("is_active" in body) {
-    if (typeof body.is_active !== "boolean") {
-      return Response.json({ error: "is_active must be a boolean" }, { status: 400 });
-    }
-    data.is_active = body.is_active ? "true" : "false";
+  const adminCount = await db.user.count({ where: { role: "admin" } });
+  const plan = planMemberUpdate(body, { id: target.id, role: target.role }, gate.user.id, adminCount);
+  if (!plan.ok) {
+    return Response.json({ error: plan.error }, { status: plan.status });
   }
 
-  if (Object.keys(data).length === 0) {
-    return Response.json({ error: "Nothing to update" }, { status: 400 });
-  }
-
-  const isSelf = target.id === gate.user.id;
-  const demoting = isAdminRole(target.role) && data.role !== undefined && !isAdminRole(data.role);
-
-  if (isSelf && demoting) {
-    return Response.json({ error: "You can't remove your own admin access." }, { status: 409 });
-  }
-  if (isSelf && data.is_active === "false") {
-    return Response.json({ error: "You can't pause your own account." }, { status: 409 });
-  }
-  if (demoting) {
-    const adminCount = await db.user.count({ where: { role: "admin" } });
-    if (adminCount <= 1) {
-      return Response.json({ error: "Can't demote the last remaining admin." }, { status: 409 });
-    }
-  }
-
-  const updated = await db.user.update({ where: { id }, data });
+  const updated = await db.user.update({ where: { id }, data: plan.data });
 
   // Account changes are consequential; leave a trail in the server logs.
   console.info(
-    `[admin] ${gate.user.email} updated ${target.email}: ${JSON.stringify(data)} at ${iso(new Date())}`,
+    `[admin] ${gate.user.email} updated ${target.email}: ${JSON.stringify(plan.data)} at ${iso(new Date())}`,
   );
 
   return Response.json({ member: serializeMember(updated) });

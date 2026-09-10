@@ -53,7 +53,9 @@ export default function AdminConsole({ currentAdminId }: { currentAdminId: strin
         aria-labelledby={`admin-tab-${tab}`}
         className="rounded-2xl border border-line/85 bg-surface/80 backdrop-blur-sm p-4 sm:p-6 lg:p-8"
       >
-        {tab === "members" && <MembersPanel currentAdminId={currentAdminId} />}
+        <div hidden={tab !== "members"}>
+          <MembersPanel currentAdminId={currentAdminId} />
+        </div>
         {tab === "deliveries" && <DeliveriesPanel />}
         {tab === "pipeline" && <PipelineStatus />}
       </section>

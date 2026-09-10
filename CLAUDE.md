@@ -400,6 +400,8 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 
 18. **Gate features on the server, never only in the UI**: `/api/pipeline/status` used to be hidden from non-admins on the dashboard while the endpoint itself answered any signed-in account — and its run log contains every subscriber's name and email. Every `/api/admin/*` route must call `requireAdmin()`; `PATCH /api/me/preferences` enforces tiers itself; and the pipeline's `get_user_profile()` ignores a Free subscriber's stored preferences. A disabled button is not a permission check.
 
+19. **`role="admin"` overrides `plan` — expose one Tier control, not two**: the console originally had separate Plan and Role dropdowns. Setting an admin's plan to Pro saved correctly but changed nothing visible, because the account was still an admin — so it looked like the save had failed. The console now has a single Tier select, mapped to columns by `tierToRolePlan()`: Free and Pro set both `role="user"` and the plan; Admin sets only `role`.
+
 ---
 
 ## Subscriber Tiers & Admin Console
@@ -416,6 +418,7 @@ Derived from two columns — keep the Python and TypeScript copies in step:
 - `normalize_plan()` treats any unknown value as Free — never accidentally Pro.
 - **Enforced in three places**: the pipeline (`UserService.get_user_profile()` returns the fixed briefing for Free; `repo.get_tracked_keywords()` skips Free users so their saved terms don't cost ingest either), the API (`PATCH /api/me/preferences` returns 403), and the dashboard UI.
 - No payment integration yet: Pro is granted by an admin in the console.
+- Free subscribers still *see* the bundle and keyword sections, rendered as locked Pro previews by `web/src/components/ProLock.tsx` (an `inert`, `aria-hidden` preview under an overlay) rather than hidden.
 
 ### Admin console (`web/src/app/admin/`)
 Server-rendered page that redirects non-admins; every endpoint it calls re-checks with `requireAdmin()` from `web/src/lib/admin-auth.ts`.
@@ -424,11 +427,13 @@ Server-rendered page that redirects non-admins; every endpoint it calls re-check
 |-----|----------|-------|
 | Members | `GET /api/admin/members` | Every subscriber: tier, plan, status, role, active flag, last email, 30-day sent/failed |
 | (row detail) | `GET /api/admin/members/[id]` | Preferences, logged emails with the exact articles, and 14 days of curator picks |
-| (row edit) | `PATCH /api/admin/members/[id]` | Change `plan`, `subscription_status`, `role`, `is_active` |
+| (row edit) | `PATCH /api/admin/members/[id]` | Change `tier` (Free / Pro / Admin), `subscription_status`, `is_active` — staged in the table, committed with **Save changes** |
 | Email log | `GET /api/admin/deliveries?date=YYYY-MM-DD` | Who was emailed that UTC day, delivered or failed, and each email's contents |
 | Pipeline | `GET /api/pipeline/status` | Latest run log (admin-only) |
 
-`PATCH` guard rails: an admin can't demote or pause themselves, and the last remaining admin can't be demoted. Making someone admin asks for confirmation in the UI. Changes are logged server-side as `[admin] <actor> updated <target>: {...}`.
+Edits in the Members table are **staged, not saved**: changed controls are highlighted, and nothing is sent until **Save changes**, which shows a confirmation listing every change (with an explicit warning when admin access is granted or removed), then PATCHes each member sequentially so the last-admin check sees them in order. Failed rows keep their unsaved edits and show the error. The panel stays mounted across tabs and warns on page unload so staged edits aren't lost.
+
+`PATCH` validation lives in the pure `planMemberUpdate()` (`web/src/lib/member-update.ts`) so it's testable without a database. Guard rails: an admin can't demote or pause themselves, and the last remaining admin can't be demoted. Changes are logged server-side as `[admin] <actor> updated <target>: {...}`.
 
 ### Email delivery log
 `repo.record_email_delivery()` is called at all five send sites in `daily_runner` (digest, both trial warnings, trial expired, admin welcome). It never raises — it's observability, and must not abort a send that already happened. The log starts when it was introduced; for earlier days the member detail view falls back to `recommendations`, which records what was *picked* but not whether it was delivered.
