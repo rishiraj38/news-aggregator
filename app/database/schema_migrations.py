@@ -1,8 +1,12 @@
 """Lightweight additive schema updates (no Alembic). Safe to run on startup."""
 
+import logging
+
 from sqlalchemy import inspect, text
 
 from app.database.connection import engine
+
+_logger = logging.getLogger(__name__)
 
 
 def _add_column_if_missing(table: str, column: str, sql_type: str) -> None:
@@ -36,3 +40,39 @@ def ensure_instagram_posted_column() -> None:
     """Add posted_to_instagram to digests table (tracks which stories were already posted)."""
     col_type = "TEXT" if engine.dialect.name == "sqlite" else "VARCHAR"
     _add_column_if_missing("digests", "posted_to_instagram", col_type)
+
+
+# (index name, table, columns) — additive and idempotent via IF NOT EXISTS.
+_INDEXES: tuple[tuple[str, str, str], ...] = (
+    # Anti-join in get_articles_without_digest: "does a digest already exist for
+    # this article?". Without it every candidate row triggers a sequential scan
+    # of the digests table, which grows by ~430 rows a day.
+    ("ix_digests_type_article", "digests", "article_type, article_id"),
+    # Per-source newest-first candidate lookup.
+    ("ix_general_rss_source_pub", "general_rss_articles", "source, published_at"),
+    # Recent-digest window used by personalization and Instagram publishing.
+    ("ix_digests_created_at", "digests", "created_at"),
+    # Per-user "already recommended" lookup during personalization.
+    ("ix_recommendations_user", "recommendations", "user_id"),
+)
+
+
+def ensure_lookup_indexes() -> None:
+    """Create the indexes the daily pipeline depends on, if they are missing.
+
+    Both PostgreSQL and SQLite support CREATE INDEX IF NOT EXISTS, so this is
+    safe to run on every startup.
+    """
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    for name, table, columns in _INDEXES:
+        if table not in tables:
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(f"CREATE INDEX IF NOT EXISTS {name} ON {table} ({columns})")
+                )
+        except Exception as exc:  # noqa: BLE001
+            # An index is an optimisation, never a correctness requirement.
+            _logger.warning("Could not create index %s on %s: %s", name, table, exc)

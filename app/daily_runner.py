@@ -88,10 +88,14 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
             with engine.connect() as conn:
                 Base.metadata.create_all(engine)
                 log_progress("✓ Database tables verified/created")
-            from app.database.schema_migrations import ensure_image_url_columns
+            from app.database.schema_migrations import (
+                ensure_image_url_columns,
+                ensure_lookup_indexes,
+            )
 
             ensure_image_url_columns()
-            log_progress("✓ Schema migrations applied (image_url columns)")
+            ensure_lookup_indexes()
+            log_progress("✓ Schema migrations applied (image_url columns, lookup indexes)")
         except Exception as e:
             logger.error(f"Failed to create database tables: {e}")
             raise

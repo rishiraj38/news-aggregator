@@ -185,8 +185,10 @@ publish_instagram_card.py
 ### CuratorAgent
 - Model: `openai/gpt-oss-120b`
 - Ranks digests by relevance to user profile
-- **Chunked batching**: splits digests into chunks of `CURATOR_CHUNK_SIZE` (default 6)
-- **TPM-aware splitting**: if Groq rejects with 413, halves the chunk and retries
+- **Chunked batching**: splits digests into chunks of `CURATOR_CHUNK_SIZE` (default 12)
+- **Splits on both 413 and `json_validate_failed`**: Groq returns a 400 with an often-empty `failed_generation` when it can't emit complete JSON for a big batch. Nothing retries a 400, so `_groq_prompt_tpm_reject()` matches it and halves the chunk — shorter output validates.
+- **`max_tokens` (`CURATOR_MAX_OUTPUT_TOKENS`, 8000)** so a long batch isn't truncated mid-JSON
+- **Degrades, never collapses**: a chunk that still fails gets neutral scores via `_finalize_chunk_results([], chunk)`. It used to `return []`, which meant one bad batch cost the subscriber their entire email.
 - Output: `List[RankedArticle]` with scores 0–10
 
 ### EmailAgent
@@ -211,6 +213,17 @@ Subclasses: `DigestProcessor`, plus Anthropic/YouTube processors.
 ### Scraper Registry (`app/runner.py`)
 Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save_func)` tuples.
 `run_scrapers(hours)` iterates all, catches exceptions per-scraper.
+
+### Digest Candidate Selection (`repository.get_articles_without_digest`)
+- `_pending_rows()` runs a **`NOT EXISTS` anti-join** against `digests` per source, ordered newest-first with `LIMIT`. It previously materialised every digest and every article row in Python (~32k ORM rows per run at current volume) to keep 60.
+- `_interleave_by_source()` then round-robins across sources so no backlog can monopolise the batch.
+- Depends on the indexes from `ensure_lookup_indexes()` — without `ix_digests_type_article` the anti-join sequential-scans `digests` for every candidate (8.5s → 3.7s on production data).
+
+### Schema Migrations (`app/database/schema_migrations.py`)
+Additive only, no Alembic, safe to run on every startup:
+- `ensure_image_url_columns()` — `image_url` on article/digest tables
+- `ensure_instagram_posted_column()` — `posted_to_instagram` on digests
+- `ensure_lookup_indexes()` — `CREATE INDEX IF NOT EXISTS` for the anti-join, per-source lookup, recent-digest window, and per-user recommendations. Index failures are logged, never raised — an index is an optimisation, not a correctness requirement.
 
 ### Keyword Lanes (`app/topic_packs/keywords.py`)
 Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each).
@@ -280,6 +293,7 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 | `DIGEST_BATCH_LIMIT` | `50` | Max articles to digest per pipeline run |
 | `DIGEST_EMAIL_TEST_ONLY` | – | Restrict email to single address |
 | `CURATOR_CHUNK_SIZE` | `12` | Digests per Groq batch |
+| `CURATOR_MAX_OUTPUT_TOKENS` | `8000` | `max_tokens` for a curator ranking call |
 | `CURATOR_MAX_CANDIDATES` | `60` | Max digests ranked per subscriber (bounds Groq spend) |
 | `KEYWORD_MAX_TERMS` | `25` | Max distinct keyword lanes ingested per run (0 disables) |
 | `KEYWORD_MAX_ARTICLES` | `15` | Max articles kept per keyword per run |
@@ -406,6 +420,7 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_digest_selection.py` | Recency ordering + source round-robin (the BBC Sport monopoly regression) |
 | `test_personalization.py` | Keyword slot reserve, topic interleaving, and `UserSnapshot` surviving a session reconnect (the zero-email regression) |
 | `test_alerts.py` | Which run shapes count as incidents vs quiet days, and that alerting never raises |
+| `test_curator_resilience.py` | `json_validate_failed` detection, split-recovery, and that a failed chunk never costs the whole email |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads

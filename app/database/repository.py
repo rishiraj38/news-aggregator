@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Callable, TypeVar
 import logging
+from sqlalchemy import nullslast
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError, PendingRollbackError
 from .models import YouTubeVideo, OpenAIArticle, AnthropicArticle, GeneralRSSArticle, Digest, User, Recommendation, PipelineRun
@@ -336,89 +337,109 @@ class Repository:
                 return out
             cursor += 1
 
+    def _pending_rows(self, model, id_column, type_expr, limit: Optional[int], *extra_filters):
+        """Newest rows of one source that have no digest yet.
+
+        A ``NOT EXISTS`` anti-join keeps this on the database side. The previous
+        implementation pulled every digest and every article table into Python
+        and filtered there, which meant loading tens of thousands of ORM rows on
+        every run to keep a few dozen.
+        """
+        already_digested = (
+            self.session.query(Digest)
+            .filter(Digest.article_type == type_expr, Digest.article_id == id_column)
+            .exists()
+        )
+        query = self.session.query(model).filter(~already_digested, *extra_filters)
+        query = query.order_by(nullslast(model.published_at.desc()))
+        if limit:
+            query = query.limit(limit)
+        return query.all()
+
     def get_articles_without_digest(
         self, limit: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """Newest-first, source-balanced pool of articles that still need a digest."""
-        seen_ids = {
-            f"{article_type}:{article_id}"
-            for article_type, article_id in self.session.query(
-                Digest.article_type, Digest.article_id
-            ).all()
-        }
-
+        # Each source only ever needs `limit` candidates, because the
+        # round-robin below can take at most that many from any one of them.
+        per_source = limit or 200
         buckets: Dict[str, List[Dict[str, Any]]] = {}
 
         def add(entry: Dict[str, Any]) -> None:
             buckets.setdefault(entry["type"], []).append(entry)
 
-        youtube_videos = (
-            self.session.query(YouTubeVideo)
-            .filter(
-                YouTubeVideo.transcript.isnot(None),
-                YouTubeVideo.transcript != "__UNAVAILABLE__",
+        for video in self._pending_rows(
+            YouTubeVideo,
+            YouTubeVideo.video_id,
+            "youtube",
+            per_source,
+            YouTubeVideo.transcript.isnot(None),
+            YouTubeVideo.transcript != "__UNAVAILABLE__",
+        ):
+            thumb = getattr(video, "image_url", None) or (
+                f"https://i.ytimg.com/vi/{video.video_id}/hqdefault.jpg"
             )
-            .all()
-        )
-        for video in youtube_videos:
-            key = f"youtube:{video.video_id}"
-            if key not in seen_ids:
-                thumb = getattr(video, "image_url", None) or (
-                    f"https://i.ytimg.com/vi/{video.video_id}/hqdefault.jpg"
-                )
-                add(
-                    {
-                        "type": "youtube",
-                        "id": video.video_id,
-                        "title": video.title,
-                        "url": video.url,
-                        "content": video.transcript or video.description or "",
-                        "published_at": video.published_at,
-                        "image_url": thumb,
-                    }
-                )
+            add(
+                {
+                    "type": "youtube",
+                    "id": video.video_id,
+                    "title": video.title,
+                    "url": video.url,
+                    "content": video.transcript or video.description or "",
+                    "published_at": video.published_at,
+                    "image_url": thumb,
+                }
+            )
 
-        openai_articles = self.session.query(OpenAIArticle).all()
-        for article in openai_articles:
-            key = f"openai:{article.guid}"
-            if key not in seen_ids:
-                add(
-                    {
-                        "type": "openai",
-                        "id": article.guid,
-                        "title": article.title,
-                        "url": article.url,
-                        "content": article.description or "",
-                        "published_at": article.published_at,
-                        "image_url": getattr(article, "image_url", None),
-                    }
-                )
+        for article in self._pending_rows(
+            OpenAIArticle, OpenAIArticle.guid, "openai", per_source
+        ):
+            add(
+                {
+                    "type": "openai",
+                    "id": article.guid,
+                    "title": article.title,
+                    "url": article.url,
+                    "content": article.description or "",
+                    "published_at": article.published_at,
+                    "image_url": getattr(article, "image_url", None),
+                }
+            )
 
-        anthropic_articles = (
-            self.session.query(AnthropicArticle)
-            .filter(AnthropicArticle.markdown.isnot(None))
-            .all()
-        )
-        for article in anthropic_articles:
-            key = f"anthropic:{article.guid}"
-            if key not in seen_ids:
-                add(
-                    {
-                        "type": "anthropic",
-                        "id": article.guid,
-                        "title": article.title,
-                        "url": article.url,
-                        "content": article.markdown or article.description or "",
-                        "published_at": article.published_at,
-                        "image_url": getattr(article, "image_url", None),
-                    }
-                )
+        for article in self._pending_rows(
+            AnthropicArticle,
+            AnthropicArticle.guid,
+            "anthropic",
+            per_source,
+            AnthropicArticle.markdown.isnot(None),
+        ):
+            add(
+                {
+                    "type": "anthropic",
+                    "id": article.guid,
+                    "title": article.title,
+                    "url": article.url,
+                    "content": article.markdown or article.description or "",
+                    "published_at": article.published_at,
+                    "image_url": getattr(article, "image_url", None),
+                }
+            )
 
-        # General RSS Articles (TechCrunch, The Verge, topic packs)
-        general_articles = self.session.query(GeneralRSSArticle).all()
-        for article in general_articles:
-            key = f"{article.source}:{article.guid}"
-            if key not in seen_ids:
+        # General RSS rows carry their origin in `source`, which becomes the
+        # digest's article_type, so each source is queried as its own lane.
+        sources = [
+            s
+            for (s,) in self.session.query(GeneralRSSArticle.source).distinct().all()
+            if s
+        ]
+        for source in sources:
+            for article in self._pending_rows(
+                GeneralRSSArticle,
+                GeneralRSSArticle.guid,
+                source,
+                per_source,
+                GeneralRSSArticle.source == source,
+            ):
                 add(
                     {
                         "type": article.source,
@@ -431,7 +452,8 @@ class Repository:
                     }
                 )
 
-        # Freshest story from each source wins its slot.
+        # SQL ordering already put each bucket newest-first, but undated rows
+        # and mixed tz-awareness still need the Python key to agree.
         for items in buckets.values():
             items.sort(key=lambda a: self._recency_key(a.get("published_at")), reverse=True)
 

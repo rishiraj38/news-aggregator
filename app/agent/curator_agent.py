@@ -19,6 +19,7 @@ CURATOR_CHUNK_SIZE = max(1, int(os.getenv("CURATOR_CHUNK_SIZE", "12")))
 CURATOR_DIGEST_SUMMARY_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_SUMMARY_CHARS", "260")))
 CURATOR_DIGEST_TITLE_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_TITLE_CHARS", "200")))
 GROQ_CHUNK_SLEEP_SECONDS = float(os.getenv("GROQ_CHUNK_SLEEP_SECONDS", "10") or 0)
+CURATOR_MAX_OUTPUT_TOKENS = max(1024, int(os.getenv("CURATOR_MAX_OUTPUT_TOKENS", "8000") or 8000))
 
 CURATOR_MAX_INTEREST_LINES = max(10, int(os.getenv("CURATOR_MAX_INTEREST_LINES", "40")))
 CURATOR_INTEREST_LINE_CHARS = max(40, int(os.getenv("CURATOR_INTEREST_LINE_CHARS", "260")))
@@ -82,6 +83,13 @@ def _clip_words(text: str, limit: int) -> str:
 
 
 def _groq_prompt_tpm_reject(exc: BaseException) -> bool:
+    """True when the batch is too large for Groq to answer in one go.
+
+    Also covers `json_validate_failed`, which Groq returns (often with an empty
+    `failed_generation`) when the model cannot emit a complete JSON object for a
+    large batch. It is a 400, so neither tenacity nor key rotation retries it —
+    but halving the batch makes the output short enough to validate.
+    """
     raw = str(exc).lower()
     if isinstance(exc, APIStatusError) and getattr(exc, "status_code", None) == 413:
         return True
@@ -90,6 +98,8 @@ def _groq_prompt_tpm_reject(exc: BaseException) -> bool:
     if "tokens per minute" in raw or " tpm " in raw:
         return True
     if "requested" in raw and ("12000" in raw or "tpm" in raw):
+        return True
+    if "json_validate_failed" in raw or "failed to validate json" in raw:
         return True
     return False
 
@@ -188,6 +198,9 @@ Output strictly valid JSON matching this schema:
             ],
             temperature=0.3,
             response_format={"type": "json_object"},
+            # Ranking N items emits N objects; without explicit headroom a full
+            # batch can be cut off mid-JSON and come back as json_validate_failed.
+            max_tokens=CURATOR_MAX_OUTPUT_TOKENS,
         )
 
         content = response.choices[0].message.content
@@ -266,15 +279,22 @@ Output strictly valid JSON matching this schema:
             )
 
         per_piece: List[RankedArticle] = []
+        failed_chunks = 0
         for ci, chunk in enumerate(chunks):
             try:
                 raw = self._rank_digest_recursive(chunk)
                 per_piece.extend(self._finalize_chunk_results(raw, chunk))
             except Exception as e:
+                # Degrade, never collapse. Returning [] here meant one unlucky
+                # batch cost the subscriber their entire email; instead keep the
+                # chunks that worked and give this one neutral scores so its
+                # items can still be picked up by diversification.
+                failed_chunks += 1
                 logger.error(
-                    "Curator chunk %s/%s failed: %s", ci + 1, len(chunks), e, exc_info=True
+                    "Curator chunk %s/%s failed, falling back to neutral scores: %s",
+                    ci + 1, len(chunks), e,
                 )
-                return []
+                per_piece.extend(self._finalize_chunk_results([], chunk))
 
             if ci + 1 < len(chunks) and GROQ_CHUNK_SLEEP_SECONDS > 0:
                 logger.info(
@@ -282,6 +302,12 @@ Output strictly valid JSON matching this schema:
                     GROQ_CHUNK_SLEEP_SECONDS,
                 )
                 time.sleep(GROQ_CHUNK_SLEEP_SECONDS)
+
+        if failed_chunks:
+            logger.warning(
+                "Curator: %s/%s chunk(s) fell back to neutral scores; %s item(s) ranked.",
+                failed_chunks, len(chunks), len(per_piece),
+            )
 
         merged = sorted(
             per_piece,
