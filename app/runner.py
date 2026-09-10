@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 def _save_youtube_videos(
     scraper: YouTubeScraper, repo: Repository, hours: int
 ) -> List[ChannelVideo]:
+    import os
+    import time
+
     from .config import SEARCH_QUERIES
     from app.services.search_agent import SearchAgent
     from datetime import datetime
@@ -25,6 +28,14 @@ def _save_youtube_videos(
     video_dicts = []
     seen_ids = set()
 
+    # Transcripts are fetched inline, one network round trip per video, and
+    # YouTube throttles hard from CI. Cap the whole stage so a bad day costs
+    # minutes rather than the entire workflow budget; videos past the budget are
+    # still stored and simply have no transcript to digest from.
+    budget_seconds = float(os.getenv("YT_TRANSCRIPT_BUDGET_SECONDS", "180") or 180)
+    started = time.monotonic()
+    skipped_for_budget = 0
+
     for query in SEARCH_QUERIES:
         candidates = agent.search_videos(query)
         for cand in candidates:
@@ -32,9 +43,13 @@ def _save_youtube_videos(
             if vid_id in seen_ids:
                 continue
             seen_ids.add(vid_id)
-            
+
             # Get Transcript
-            transcript = scraper.get_transcript(vid_id)
+            if budget_seconds > 0 and (time.monotonic() - started) > budget_seconds:
+                skipped_for_budget += 1
+                transcript = None
+            else:
+                transcript = scraper.get_transcript(vid_id)
             
             # Parse Date
             try:
@@ -66,6 +81,12 @@ def _save_youtube_videos(
                 }
             )
             
+    if skipped_for_budget:
+        logger.warning(
+            "YouTube transcript budget of %.0fs exhausted — %d video(s) stored without transcripts.",
+            budget_seconds, skipped_for_budget,
+        )
+
     if video_dicts:
         repo.bulk_create_youtube_videos(video_dicts)
     return videos
@@ -139,11 +160,46 @@ _SCRAPER_REGISTRY_CORE: List[tuple[str, Any, Callable]] = [
 SCRAPER_REGISTRY = _SCRAPER_REGISTRY_CORE + _topic_pack_scraper_rows()
 
 
+def _keyword_scraper_rows(repo: Repository) -> List[tuple[str, Any, Callable]]:
+    """One ingest lane per keyword any active subscriber is tracking.
+
+    Built at call time rather than import time because the set of keywords
+    lives in the database and changes whenever someone edits their preferences.
+    """
+    import os
+
+    from app.scrapers.keyword_news import KeywordNewsScraper
+    from app.topic_packs.keywords import keyword_source_key
+
+    limit = max(0, int(os.getenv("KEYWORD_MAX_TERMS", "25") or 25))
+    if limit == 0:
+        return []
+
+    try:
+        keywords = repo.get_tracked_keywords(limit=limit)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Could not load tracked keywords: %s", exc)
+        return []
+
+    if not keywords:
+        return []
+
+    logger.info("Tracked keywords this run (%d): %s", len(keywords), ", ".join(keywords))
+    return [
+        (
+            keyword_source_key(kw),
+            KeywordNewsScraper(kw),
+            _make_general_rss_save(keyword_source_key(kw)),
+        )
+        for kw in keywords
+    ]
+
+
 def run_scrapers(hours: int = 24) -> dict:
     repo = Repository()
     results = {}
 
-    for name, scraper, save_func in SCRAPER_REGISTRY:
+    for name, scraper, save_func in SCRAPER_REGISTRY + _keyword_scraper_rows(repo):
         try:
             items = save_func(scraper, repo, hours)
             results[name] = items

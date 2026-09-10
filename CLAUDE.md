@@ -6,6 +6,7 @@
 
 | What | Command |
 |------|---------|
+| Run tests | `python -m pytest` (offline; no DB or API keys needed) |
 | Run full pipeline locally | `uv run python main.py [hours] [top_n]` |
 | Run pipeline (alt) | `python -m app.daily_runner` |
 | Instagram card (dry-run) | `uv run python publish_instagram_card.py --dry-run` |
@@ -211,8 +212,19 @@ Subclasses: `DigestProcessor`, plus Anthropic/YouTube processors.
 Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save_func)` tuples.
 `run_scrapers(hours)` iterates all, catches exceptions per-scraper.
 
+### Keyword Lanes (`app/topic_packs/keywords.py`)
+Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each).
+
+- Each keyword becomes an ingest source key `kw_<slug>_<hash>` via `keyword_source_key()`
+- `KeywordNewsScraper` fetches it from **Google News RSS search** (arbitrary query) + **Hacker News (Algolia)**, capped by `KEYWORD_MAX_ARTICLES` (15)
+- `runner._keyword_scraper_rows()` builds these lanes at run time from the DB (`repo.get_tracked_keywords()`), capped by `KEYWORD_MAX_TERMS` (25), most-requested first
+- **Routing is private**: `digest_matches_topics()` only lets a `kw_*` digest through for a user whose own keywords produced that exact key. Callers that pass no keywords (Instagram publishing) never see them.
+- `diversify.py` reserves `KEYWORD_RESERVE_RATIO` (40%) of the email for keyword hits, and `daily_runner` keeps them ahead of bundle items when trimming the ranking pool — otherwise an opted-in term could go days without surfacing
+- ⚠️ `normalizeKeyword` in `web/src/lib/topics.ts` **must** mirror `normalize_keyword` in Python; the source key is derived from that canonical form, so drift orphans the lane
+- Set them with `python scripts/set_user_keywords.py <email> "term one,term two"` (`--show` / `--clear`), or from the dashboard keyword editor
+
 ### Topic Packs (`app/topic_packs/`)
-- `registry.py`: defines `ALLOWED_TOPIC_IDS` = technology, politics, sports, cricket
+- `registry.py`: defines `ALLOWED_TOPIC_IDS` = technology, startups, politics, sports, cricket
 - Five packs feed `general_rss_articles.source`:
   | Pack | Topic | Feeds |
   |------|-------|-------|
@@ -221,6 +233,7 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
   | `topic_cricket_bbccricket` | cricket | BBC Cricket, ESPNcricinfo |
   | `topic_tech_general` | technology | BBC Tech, Guardian Tech, Ars Technica, Wired AI, MIT Tech Review |
   | `topic_tech_research` | technology | DeepMind blog, Hugging Face blog |
+  | `topic_startup_ychn` | startups | YC blog, HN front page, HN high-score stories |
 - The two tech packs exist so `['technology']`-only subscribers always have candidates; the four core scrapers alone were too thin to survive topic filtering.
 - Maps `article_type` → topic via `_SOURCE_TOPIC` dict
 - `digest_matches_topics()` gates which digests reach which users
@@ -268,6 +281,10 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 | `DIGEST_EMAIL_TEST_ONLY` | – | Restrict email to single address |
 | `CURATOR_CHUNK_SIZE` | `12` | Digests per Groq batch |
 | `CURATOR_MAX_CANDIDATES` | `60` | Max digests ranked per subscriber (bounds Groq spend) |
+| `KEYWORD_MAX_TERMS` | `25` | Max distinct keyword lanes ingested per run (0 disables) |
+| `KEYWORD_MAX_ARTICLES` | `15` | Max articles kept per keyword per run |
+| `YT_TRANSCRIPT_TIMEOUT` | `20` | Per-request timeout (s) for YouTube transcript fetches |
+| `YT_TRANSCRIPT_RETRIES` | `2` | Webshare `retries_when_blocked` for transcripts |
 | `DISABLE_SCRAPER_PROXY` | – | `true` skips Webshare and fetches feeds directly |
 | `PIPELINE_HOURS` | `72` | Look-back window for `python -m app.daily_runner` |
 | `PIPELINE_TOP_N` | `10` | Articles per subscriber email |
@@ -311,6 +328,11 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 - **Dedup**: skips digests with `posted_to_instagram="true"`, marks after successful post
 - **Secrets needed**: all digest secrets + `META_ACCESS_TOKEN`, `INSTAGRAM_BUSINESS_ID`, `CLOUDINARY_*`
 
+### `tests.yml`
+- **Triggers**: push to `main`, every PR, manual
+- **Python job**: `python -m pytest` — offline unit tests, no DB or secrets
+- **Web job**: `tsc --noEmit` + `npm run lint` in `web/`
+
 ### `docker-publish.yml`
 - Docker image build and push
 
@@ -330,7 +352,7 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 
 6. **Digest `created_at` must be current time**: `repository.py:create_digest()` must use `datetime.now(timezone.utc)` for `created_at`, NOT the article's `published_at`. Step 5 filters by `get_recent_digests(hours=24)` — if `created_at` matches a 3-day-old article, it falls outside the window → "No digests available to rank".
 
-7. **YouTube scraping timeouts**: YouTube aggressively throttles. The scraper retries 10× per video with no timeout cap, which can stall the pipeline for 30+ minutes. Consider adding explicit timeouts.
+7. **YouTube transcript fetches are bounded**: `youtube-transcript-api` builds a `Session` with no timeout and, with a Webshare proxy, retries a blocked video 10×, which could stall the stage for 30+ minutes. `YouTubeScraper` now injects a `_TimeoutSession` (`YT_TRANSCRIPT_TIMEOUT`, 20s) and lowers `retries_when_blocked` (`YT_TRANSCRIPT_RETRIES`, 2). Don't drop the `http_client=` argument — that restores the unbounded behaviour.
 
 8. **413 TPM errors from Groq**: The curator splits chunks on 413 but digest_agent doesn't. If single articles are too large, the 8000-char truncation in `digest_agent.py:31` is the safeguard.
 
@@ -353,6 +375,24 @@ Core scrapers + topic-pack scrapers registered as `(name, scraper_instance, save
 17. **Trial system**: 27-day trial with warnings at 2 days and 1 day remaining. Admins (`role="admin"`) are exempt. Expiration flags stored as string booleans.
 
 ---
+
+## Tests (`tests/`)
+
+Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `python -m pytest`.
+
+| File | Covers |
+|------|--------|
+| `test_keywords.py` | Keyword normalization, source-key stability, per-subscriber routing privacy |
+| `test_digest_selection.py` | Recency ordering + source round-robin (the BBC Sport monopoly regression) |
+| `test_personalization.py` | Keyword slot reserve, topic interleaving, and `UserSnapshot` surviving a session reconnect (the zero-email regression) |
+
+`tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
+throwaway SQLite file via the `sqlite_repo` fixture, which reloads
+`app.database.connection` against `tmp_path`.
+
+**When fixing a pipeline bug, add the regression test here first** — every bug
+in the September 2026 incident (zero emails, single-source ingest, stale
+backlog) was mechanical and would have been caught by a unit test.
 
 ## Adding a New Source
 

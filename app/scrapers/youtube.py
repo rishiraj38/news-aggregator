@@ -1,11 +1,33 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
+import logging
 import os
 import feedparser
+import requests
 from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 from youtube_transcript_api.proxies import WebshareProxyConfig
+
+_logger = logging.getLogger(__name__)
+
+# youtube-transcript-api builds a Session with no timeout and, with a Webshare
+# proxy, retries a blocked video 10x. A throttled video could therefore hang the
+# stage for tens of minutes and eat the whole workflow budget.
+YT_TRANSCRIPT_TIMEOUT = float(os.getenv("YT_TRANSCRIPT_TIMEOUT", "20") or 20)
+YT_TRANSCRIPT_RETRIES = int(os.getenv("YT_TRANSCRIPT_RETRIES", "2") or 2)
+
+
+class _TimeoutSession(requests.Session):
+    """Session that applies a default timeout to every request."""
+
+    def __init__(self, timeout: float):
+        super().__init__()
+        self._timeout = timeout
+
+    def request(self, *args, **kwargs):  # type: ignore[override]
+        kwargs.setdefault("timeout", self._timeout)
+        return super().request(*args, **kwargs)
 
 
 class Transcript(BaseModel):
@@ -29,10 +51,15 @@ class YouTubeScraper:
 
         if proxy_username and proxy_password:
             proxy_config = WebshareProxyConfig(
-                proxy_username=proxy_username, proxy_password=proxy_password
+                proxy_username=proxy_username,
+                proxy_password=proxy_password,
+                retries_when_blocked=YT_TRANSCRIPT_RETRIES,
             )
 
-        self.transcript_api = YouTubeTranscriptApi(proxy_config=proxy_config)
+        self.transcript_api = YouTubeTranscriptApi(
+            proxy_config=proxy_config,
+            http_client=_TimeoutSession(YT_TRANSCRIPT_TIMEOUT),
+        )
 
     def _get_rss_url(self, channel_id: str) -> str:
         return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
@@ -53,7 +80,8 @@ class YouTubeScraper:
             return Transcript(text=text)
         except (TranscriptsDisabled, NoTranscriptFound):
             return None
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            _logger.warning("Transcript unavailable for %s: %s", video_id, exc)
             return None
 
     def get_latest_videos(self, channel_id: str, hours: int = 24) -> list[ChannelVideo]:

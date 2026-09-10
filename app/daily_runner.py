@@ -266,9 +266,18 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                     continue
 
                 topic_set = set(user_profile["topics"])
+                keyword_keys = user_profile.get("keyword_source_keys") or frozenset()
+                if keyword_keys:
+                    logger.info(
+                        "Tracking %d keyword(s) for %s: %s",
+                        len(keyword_keys), user_name,
+                        ", ".join(user_profile.get("keywords") or []),
+                    )
                 before_topics = len(unseen_digests)
                 unseen_digests = [
-                    d for d in unseen_digests if digest_matches_topics(d["article_type"], topic_set)
+                    d
+                    for d in unseen_digests
+                    if digest_matches_topics(d["article_type"], topic_set, keyword_keys)
                 ]
                 if before_topics != len(unseen_digests):
                     log_progress(
@@ -290,11 +299,18 @@ def run_daily_pipeline(hours: int = 24, top_n: int = 10, force_scrape: bool = Fa
                 # newest-first, so this keeps the freshest candidates.
                 max_candidates = int(os.getenv("CURATOR_MAX_CANDIDATES", "60") or 60)
                 if max_candidates > 0 and len(unseen_digests) > max_candidates:
+                    # Keyword matches are the whole point of a subscriber's opt-in,
+                    # so they survive the trim ahead of generic bundle items.
+                    from app.topic_packs.keywords import is_keyword_source
+
+                    kw_hits = [d for d in unseen_digests if is_keyword_source(d["article_type"])]
+                    others = [d for d in unseen_digests if not is_keyword_source(d["article_type"])]
+                    trimmed = (kw_hits + others)[:max_candidates]
                     logger.info(
-                        "Trimming ranking pool for %s: %d → %d newest candidates",
-                        user_name, len(unseen_digests), max_candidates,
+                        "Trimming ranking pool for %s: %d → %d (%d keyword hit(s) kept)",
+                        user_name, len(unseen_digests), len(trimmed), len(kw_hits),
                     )
-                    unseen_digests = unseen_digests[:max_candidates]
+                    unseen_digests = trimmed
 
                 logger.info(f"Ranking {len(unseen_digests)} new digests for {user_name} (out of {len(recent_digests)} total recent)...")
                 ranked_this_user = True

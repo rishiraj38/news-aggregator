@@ -589,6 +589,33 @@ class Repository:
 
         return self._safe_execute(_do)
 
+    def get_tracked_keywords(self, limit: int = 25) -> List[str]:
+        """Distinct keywords across active subscribers, most-requested first.
+
+        Drives ingestion: one network lane per term, so the list is capped.
+        Ordering by popularity means a shared term is never dropped in favour
+        of a single user's niche one.
+        """
+        from collections import Counter
+        from app.topic_packs.keywords import user_keywords
+        import json
+
+        def _do() -> List[str]:
+            rows = self.session.query(User.preferences).filter(
+                User.is_active == "true"
+            ).all()
+            counter: Counter = Counter()
+            for (raw,) in rows:
+                try:
+                    prefs = json.loads(raw or "{}")
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    continue
+                if isinstance(prefs, dict):
+                    counter.update(user_keywords(prefs))
+            return [kw for kw, _ in counter.most_common(limit)]
+
+        return self._safe_execute(_do)
+
     _USER_FLAG_FIELDS = frozenset(
         {
             "admin_welcome_sent",

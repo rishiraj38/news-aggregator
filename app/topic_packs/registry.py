@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any, FrozenSet, List, Mapping, MutableMapping, Sequence, Set
+from typing import AbstractSet, Any, FrozenSet, List, Mapping, MutableMapping, Sequence, Set
+
+from app.topic_packs.keywords import is_keyword_source
 
 # Digest `article_type` values that belong to the default tech pipeline
 TECH_ARTICLE_SOURCES: FrozenSet[str] = frozenset(
     {"youtube", "openai", "anthropic", "techcrunch", "theverge"}
 )
 
-ALLOWED_TOPIC_IDS: tuple[str, ...] = ("technology", "politics", "sports", "cricket")
+ALLOWED_TOPIC_IDS: tuple[str, ...] = ("technology", "startups", "politics", "sports", "cricket")
 
 TOPIC_LABELS: dict[str, str] = {
     "technology": "Technology & AI",
+    "startups": "Startups & Y Combinator",
     "politics": "Politics & world affairs",
     "sports": "Sports",
     "cricket": "Cricket",
@@ -62,6 +65,18 @@ RSS_TOPIC_FEED_SCRAPERS: List[dict[str, Any]] = [
         ],
     },
     {
+        # YC / Hacker News lane: launches, funding and builder discussion that
+        # the mainstream tech press picks up late or not at all.
+        "registry_name": "topic_startup_ychn",
+        "source_key": "topic_startup_ychn",
+        "topic_id": "startups",
+        "rss_urls": [
+            "https://www.ycombinator.com/blog/rss",
+            "https://hnrss.org/frontpage",
+            "https://hnrss.org/newest?points=100",
+        ],
+    },
+    {
         "registry_name": "topic_tech_research",
         "source_key": "topic_tech_research",
         "topic_id": "technology",
@@ -83,11 +98,23 @@ def _topic_from_article_type(article_type: str) -> str | None:
     return None
 
 
-def digest_matches_topics(article_type: str, user_topics: Set[str]) -> bool:
+def digest_matches_topics(
+    article_type: str,
+    user_topics: Set[str],
+    user_keyword_keys: AbstractSet[str] = frozenset(),
+) -> bool:
     """
     Gate digests during personalization. Known sources must map to one of the subscriber's bundles.
     Unknown sources stay eligible so older rows or migrations never empty the funnel silently.
+
+    Keyword lanes (``kw_*``) are private to the subscriber who requested the
+    term: they are only ever eligible for a user whose own keyword set produced
+    that source key. Callers that do not pass keywords (e.g. Instagram
+    publishing) therefore never surface another person's tracked terms.
     """
+    if is_keyword_source(article_type):
+        return article_type in user_keyword_keys
+
     topic = _topic_from_article_type(article_type)
     if topic is None:
         return True
@@ -124,6 +151,8 @@ def normalize_user_topics(prefs: Mapping[str, Any]) -> List[str]:
     def _has(*needles: str) -> bool:
         return any(any(n in h for n in needles) for h in bag)
 
+    if _has("startup", "founder", "y combinator", "ycombinator", "venture", "vc", "seed round"):
+        derived.append("startups")
     if _has("politic", "election", "parliament"):
         derived.append("politics")
     if _has("cricket", "ipl", "ashes"):
