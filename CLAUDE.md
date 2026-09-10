@@ -404,6 +404,8 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 
 19. **`role="admin"` overrides `plan` — expose one Tier control, not two**: the console originally had separate Plan and Role dropdowns. Setting an admin's plan to Pro saved correctly but changed nothing visible, because the account was still an admin — so it looked like the save had failed. The console now has a single Tier select, mapped to columns by `tierToRolePlan()`: Free and Pro set both `role="user"` and the plan; Admin sets only `role`.
 
+20. **Clerk development keys trap crawlers in a redirect loop**: production runs on a Clerk *development* instance (`pk_test_…`, `*.clerk.accounts.dev`). Its middleware answers every cookieless, browser-like request with a 307 "handshake" to clerk.accounts.dev and back to set a cookie. Crawlers keep no cookies, so Googlebot loops forever and Search Console reports **"Page fetch: Failed: Redirect error"**. Plain `curl` does *not* trigger it (not a document request) — test with `-H "Accept: text/html" -H "Sec-Fetch-Dest: document"`. Fix in place: `web/src/middleware.ts` bypasses `clerkMiddleware` for `/`, so the homepage **must not call `auth()` or `currentUser()` server-side** (they require the middleware and throw); signed-in visitors are forwarded by the client-side `SignedInRedirect`. A Clerk production instance (needs a custom domain) doesn't handshake signed-out visitors and would make the bypass unnecessary.
+
 ---
 
 ## Subscriber Tiers & Admin Console
@@ -477,6 +479,7 @@ All brand and URL signals come from `web/src/lib/site.ts` (`SITE_URL`, `SITE_NAM
 - **Sitemap** lists only `/`. **robots.txt** disallows `/api/`, `/dashboard`, `/admin`, `/upgrade`. Sign-in/sign-up are kept out with a `noindex` in `app/(auth)/layout.tsx` instead of a Disallow — a blocked page's noindex tag is never read.
 - **Don't re-add `public/robots.txt` or `public/sitemap.xml`.** `app/robots.ts` and `app/sitemap.ts` serve those URLs; the static copies went stale unnoticed.
 - **Moving to a custom domain**: set `NEXT_PUBLIC_APP_URL` in Vercel and redeploy — every signal above follows. Then add the new domain as a Search Console property and resubmit the sitemap. `email.ts` previously fell back to `https://helix.vercel.app` (not this site), so with the env unset new signups got a dashboard link to someone else's deployment.
+- **The homepage skips Clerk's middleware** so crawlers get a plain 200 — see gotcha 20. Any new public page meant for Google needs the same treatment on a development Clerk instance.
 - Ranking for the bare word "helix" is not realistic (Helix editor, BMC Helix, Figure's Helix, Line 6 Helix). Target "Helix news", "Helix AI news", and the domain name.
 
 ## Tests (`tests/`)

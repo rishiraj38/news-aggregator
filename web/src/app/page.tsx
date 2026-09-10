@@ -12,19 +12,18 @@ import {
   ScanSearch,
   Sparkles,
 } from "lucide-react";
-import { auth } from "@clerk/nextjs/server";
-import { redirect } from "next/navigation";
+import SignedInRedirect from "@/components/SignedInRedirect";
 import { SITE_INSTAGRAM_HREF } from "@/lib/site";
 
-export default async function Home() {
-  const { userId } = await auth();
-
-  if (userId) {
-    redirect("/dashboard");
-  }
-
+// No server-side auth here, deliberately. Calling Clerk's auth() requires the
+// middleware on "/", and on a Clerk development instance that middleware sends
+// every cookieless visitor through a redirect handshake that crawlers can't
+// complete — Google reported "Redirect error" and never indexed the page.
+// Signed-in visitors are forwarded to the dashboard client-side instead.
+export default function Home() {
   return (
     <div className="relative z-10 min-h-dvh bg-surface-deep text-ink overflow-x-hidden">
+      <SignedInRedirect />
       <Navbar />
 
       <main>
