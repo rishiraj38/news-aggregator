@@ -11,7 +11,17 @@
 name: Instagram post
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build the post and print the caption, but publish nothing"
+        type: boolean
+        default: false
+      format:
+        description: "Post format (default = INSTAGRAM_POST_FORMAT variable)"
+        type: choice
+        options: [default, carousel, reel, single]
+        default: default
   # Two posts per day:
   #   Morning: 04:30 UTC (10:00 AM IST)
   #   Evening: 11:00 UTC (4:30 PM IST) — ~30min after Daily AI Digest
@@ -82,4 +92,26 @@ jobs:
           set -e
           EMAIL="${INSTAGRAM_CURATOR_EMAIL:-rishiraj438gt@gmail.com}"
           export META_PUBLIC_IMAGE_UPLOAD="${META_PUBLIC_IMAGE_UPLOAD:-cloudinary}"
-          python publish_instagram_card.py --publish --email "$EMAIL"
+
+          # inputs.* are empty on a schedule, so scheduled runs publish as before.
+          MODE="--publish"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            MODE="--dry-run"
+            echo "::notice::Dry run — building the post without publishing"
+          fi
+
+          FORMAT_FLAG=""
+          case "${{ inputs.format }}" in
+            reel)   FORMAT_FLAG="--reel" ;;
+            single) FORMAT_FLAG="--single" ;;
+          esac
+
+          python publish_instagram_card.py $MODE $FORMAT_FLAG --email "$EMAIL"
+
+      - name: Upload generated post for review
+        if: ${{ inputs.dry_run == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: instagram-post-preview
+          path: outputs/instagram/
+          retention-days: 7
