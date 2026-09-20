@@ -45,6 +45,8 @@ def test_segment_filter_animates_the_progress_bar_by_overlay_not_drawbox():
 def test_single_frame_background_keeps_zoompan_from_exploding(monkeypatch):
     seg = rv._Segment(Path("bg.jpg"), Path("fg.png"), 5.0)
     calls: list[list[str]] = []
+    # Stub both: the suite must run with no ffmpeg installed.
+    monkeypatch.setattr(rv, "ffmpeg_binary", lambda: "ffmpeg")
     monkeypatch.setattr(rv, "_run", lambda cmd: calls.append(cmd))
     rv._render_segment(seg, Path("out.mp4"), Path("bar.png"), 0.0, 0.5)
     cmd = calls[0]
@@ -64,7 +66,8 @@ def test_story_text_is_trimmed_to_fit_above_the_source_rule():
     assert len(lines) <= 4
 
 
-def test_build_reel_rejects_empty_input():
+def test_build_reel_rejects_empty_input(monkeypatch):
+    monkeypatch.setattr(rv, "ffmpeg_binary", lambda: "ffmpeg")
     with pytest.raises(ValueError):
         rv.build_reel(ReelSpec(stories=[]), Path("/tmp/x.mp4"))
 
