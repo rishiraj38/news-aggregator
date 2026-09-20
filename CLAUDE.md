@@ -50,20 +50,25 @@ main.py / app/daily_runner.py          ← Entry point (GitHub Actions cron)
     └── Delivery log                   → email_deliveries (every send, status + contents)
 ```
 
-### Instagram Card Pipeline (separate workflow)
+### Instagram Carousel Pipeline (separate workflow)
 
 ```
 publish_instagram_card.py
 ├── Runs ensure_instagram_posted_column() migration
 ├── Fetches recent digests from DB
 ├── Filters out digests with posted_to_instagram="true" (dedup)
-├── CuratorAgent ranks → picks top unposted story
-├── Resolves thumbnail (OG/YouTube/BBC → 1024px)
-├── render_breaking_news_card()        → app/services/news_graphic.py (Pillow)
-├── Uploads JPEG (Cloudinary / anon hosts)
-├── Publishes via Meta Instagram Graph API
-└── Marks digest as posted_to_instagram="true" in DB
+├── CuratorAgent ranks → _digests_from_curator_picks() takes the top N (default 5)
+├── Resolves a thumbnail per story (OG/YouTube/BBC → 1024px)
+├── render_carousel()                  → app/services/carousel_graphic.py (Pillow)
+│     cover slide + one slide per story + call-to-action slide
+├── build_carousel_caption()           → app/services/social_copy.py (copy + hashtags)
+├── Stages every slide to a public HTTPS URL (Cloudinary / anon hosts)
+├── Publishes a CAROUSEL container via Meta Instagram Graph API
+└── Marks every used digest as posted_to_instagram="true" in DB
 ```
+
+`--single` posts the older one-image `render_breaking_news_card()` card instead — kept as
+a fallback for when only one unposted story exists.
 
 ---
 
@@ -332,7 +337,9 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 | `CLOUDINARY_CLOUD_NAME` | Unsigned upload cloud name |
 | `CLOUDINARY_UPLOAD_PRESET` | Unsigned upload preset |
 | `META_PUBLIC_IMAGE_UPLOAD` | `auto` or `cloudinary` |
-| `NEWS_GRAPHIC_TICKER` | Red bar text (default: "BREAKING NEWS") |
+| `NEWS_GRAPHIC_TICKER` | Red bar text on the `--single` card (default: "BREAKING NEWS") |
+| `INSTAGRAM_CAROUSEL_STORIES` | Story slides per carousel (default 5, max 8 — Instagram allows 10 images total) |
+| `HELIX_FONT_DIR` | Override the bundled Inter directory used by the carousel renderer |
 | `HELIX_LOGO_PATH` | Custom logo PNG path |
 
 ---
@@ -405,6 +412,13 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 19. **`role="admin"` overrides `plan` — expose one Tier control, not two**: the console originally had separate Plan and Role dropdowns. Setting an admin's plan to Pro saved correctly but changed nothing visible, because the account was still an admin — so it looked like the save had failed. The console now has a single Tier select, mapped to columns by `tierToRolePlan()`: Free and Pro set both `role="user"` and the plan; Admin sets only `role`.
 
 20. **Clerk development keys trap crawlers in a redirect loop**: production runs on a Clerk *development* instance (`pk_test_…`, `*.clerk.accounts.dev`). Its middleware answers every cookieless, browser-like request with a 307 "handshake" to clerk.accounts.dev and back to set a cookie. Crawlers keep no cookies, so Googlebot loops forever and Search Console reports **"Page fetch: Failed: Redirect error"**. Plain `curl` does *not* trigger it (not a document request) — test with `-H "Accept: text/html" -H "Sec-Fetch-Dest: document"`. Fix in place: `web/src/middleware.ts` bypasses `clerkMiddleware` for `/`, so the homepage **must not call `auth()` or `currentUser()` server-side** (they require the middleware and throw); signed-in visitors are forwarded by the client-side `SignedInRedirect`. A Clerk production instance (needs a custom domain) doesn't handshake signed-out visitors and would make the bypass unnecessary.
+
+
+21. **Carousels are staged child-by-child**: Instagram's API wants each slide created as its own container with `is_carousel_item=true`, each one polled until `FINISHED`, and then a parent `media_type=CAROUSEL` container that carries the caption and the `children` list. Between 2 and 10 children — `publish_jpeg_carousel_post()` raises below or above that, and `--slides` is clamped to 8 so cover + stories + CTA can never exceed 10. `INSTAGRAM_SOURCE_IMAGE_URL` is meaningless here (one URL can't be five different slides), so it is ignored with a warning; Cloudinary or the anon-host chain stages every slide instead.
+
+22. **The carousel ships its own typeface**: `assets/fonts/Inter*.ttf` are committed (OFL, licence alongside) because GitHub runners only have DejaVu, which is what made the old cards look generic. `_font_path()` still falls back to system fonts and finally `ImageFont.load_default()`, so rendering never hard-fails — but delete the bundle and CI output silently regresses to a different look. `HELIX_FONT_DIR` overrides the directory.
+
+23. **Each carousel consumes N stories**: every digest that appears on a slide is marked `posted_to_instagram="true"`, so a 5-slide post at 04:30 and another at 11:00 burns ~10 stories a day. With fewer than 2 unposted digests in the window the script automatically falls back to the single-image card rather than posting a one-slide "carousel", which the API rejects anyway.
 
 ---
 
@@ -496,6 +510,9 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_youtube_search.py` | View-count filtering, ordering, shorts exclusion, and graceful API failure |
 | `test_entitlements.py` | Tier resolution, Free getting the fixed briefing server-side, Pro-only keyword lanes, trial exemption, and the delivery log |
 | `test_migrations.py` | `plan` backfills to Free, `pro_requested_at` is NULL for existing rows, and migrations are idempotent |
+| `test_social_copy.py` | Caption structure, the 2200-char cap keeping the hashtag block, and hashtags rotating by day |
+| `test_carousel_graphic.py` | Slide count and canvas size, the 10-image cap, headline fitting, and that a story with no image never fetches |
+| `test_instagram_carousel.py` | Curator rank order, de-duplication, top-up, and the Graph API 2-10 child guard |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads

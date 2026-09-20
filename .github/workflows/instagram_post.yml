@@ -1,4 +1,5 @@
-# Build the top-ranked digest card and publish to Instagram (Instagram Graph API).
+# Build a multi-story carousel from the top-ranked digests and publish it (Instagram Graph API).
+# Slides: cover + one per story + call-to-action. `--single` falls back to the one-image card.
 # Does not send digest email — keep this separate from `daily_digest.yml`.
 #
 # JPEG staging on runners: anonymous hosts (Catbox, 0x0.st, file.io, transfer.sh) are usually blocked or down.
@@ -61,6 +62,10 @@ jobs:
           IMGUR_CLIENT_ID: ${{ secrets.IMGUR_CLIENT_ID }}
           INSTAGRAM_SOURCE_IMAGE_URL: ${{ secrets.INSTAGRAM_SOURCE_IMAGE_URL }}
           NEWS_GRAPHIC_TICKER: ${{ vars.NEWS_GRAPHIC_TICKER }}
+          # Carousel: slide count plus the CTA slide's links
+          INSTAGRAM_CAROUSEL_STORIES: ${{ vars.INSTAGRAM_CAROUSEL_STORIES }}
+          HELIX_WEBSITE_URL: ${{ vars.HELIX_WEBSITE_URL }}
+          HELIX_INSTAGRAM_HANDLE: ${{ vars.HELIX_INSTAGRAM_HANDLE }}
           HELIX_LOGO_PATH: ${{ vars.HELIX_LOGO_PATH }}
           INSTAGRAM_CURATOR_EMAIL: ${{ vars.INSTAGRAM_CURATOR_EMAIL }}
         run: |

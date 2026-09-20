@@ -38,7 +38,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from urllib.parse import quote
 
 import requests
@@ -443,6 +443,47 @@ def imgur_upload_jpeg(path: Path, client_id: str) -> str:
         ) from exc
 
 
+
+def stage_public_image_url(
+    *,
+    jpeg_path: Path | None,
+    access_token: str,
+    instagram_business_id: str,
+    imgur_client_id: str | None,
+    image_url: str | None = None,
+    facebook_page_id: str | None = None,
+    media_root: str | None = None,
+) -> str:
+    """
+    Turn a local JPEG into an HTTPS URL Instagram can fetch.
+
+    Order: caller-supplied URL → unpublished Facebook Page photo (facebook Graph only)
+    → the anonymous host chain. Shared by the single-image and carousel publishers.
+    """
+    root = media_root or media_graph_root()
+    if image_url:
+        return image_url.strip()
+    if jpeg_path is None:
+        raise ValueError(
+            "Need jpeg_path (local card) unless INSTAGRAM_SOURCE_IMAGE_URL / image_url is set."
+        )
+
+    skip_fb = os.getenv("META_SKIP_FACEBOOK_PAGE_STAGING", "").strip().lower() in ("1", "true", "yes")
+    if not skip_fb and is_facebook_media_host(root):
+        page_id = (facebook_page_id or "").strip() or discover_facebook_page_for_instagram(
+            access_token, instagram_business_id
+        )
+        if page_id:
+            try:
+                url = facebook_unpublished_photo_public_url(page_id, access_token, jpeg_path)
+                logger.info("Public image URL via Facebook Page unpublished upload")
+                return url
+            except Exception as exc:
+                logger.warning("Facebook unpublished Page staging failed; trying anon hosts (%s)", exc)
+
+    return upload_local_jpeg_to_public_https(jpeg_path, imgur_client_id=imgur_client_id)
+
+
 def graph_create_photo_container(
     media_root: str,
     ig_user_id: str,
@@ -530,38 +571,15 @@ def publish_jpeg_feed_post(
       * Otherwise ``META_PUBLIC_IMAGE_UPLOAD=auto`` → catbox / 0x0 / file.io / transfer.sh (+ optional Imgur).
     """
     media_root = media_graph_root()
-    skip_fb = os.getenv("META_SKIP_FACEBOOK_PAGE_STAGING", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
+    public_url = stage_public_image_url(
+        jpeg_path=jpeg_path,
+        access_token=access_token,
+        instagram_business_id=instagram_business_id,
+        imgur_client_id=imgur_client_id,
+        image_url=image_url,
+        facebook_page_id=facebook_page_id,
+        media_root=media_root,
     )
-
-    public_url: str | None
-
-    if image_url:
-        public_url = image_url.strip()
-    elif jpeg_path is None:
-        raise ValueError(
-            "Need jpeg_path (local card) unless INSTAGRAM_SOURCE_IMAGE_URL / image_url is set."
-        )
-    else:
-        public_url = None
-        if not skip_fb and is_facebook_media_host(media_root):
-            page_id = (facebook_page_id or "").strip() or discover_facebook_page_for_instagram(
-                access_token, instagram_business_id
-            )
-            if page_id:
-                try:
-                    public_url = facebook_unpublished_photo_public_url(page_id, access_token, jpeg_path)
-                    logger.info("Public image URL via Facebook Page unpublished upload")
-                except Exception as exc:
-                    logger.warning("Facebook unpublished Page staging failed; trying anon hosts (%s)", exc)
-
-        if public_url is None:
-            public_url = upload_local_jpeg_to_public_https(
-                jpeg_path, imgur_client_id=imgur_client_id
-            )
-
     logger.info("Instagram ``image_url`` ready (Media API host=%s)", media_root)
     container = graph_create_photo_container(
         media_root, instagram_business_id, access_token, public_url, caption
@@ -569,3 +587,105 @@ def publish_jpeg_feed_post(
     graph_wait_container_ready(media_root, container, access_token)
     pub_id = graph_publish_container(media_root, instagram_business_id, container, access_token)
     return {"container_id": container, "instagram_media_id": pub_id, "image_url_used": public_url}
+
+
+def graph_create_carousel_item(
+    media_root: str,
+    ig_user_id: str,
+    access_token: str,
+    image_url: str,
+) -> str:
+    """One child of a carousel. No caption — the caption lives on the parent container."""
+    r = requests.post(
+        f"{media_root}/{ig_user_id}/media",
+        params={
+            "image_url": image_url[:2048],
+            "is_carousel_item": "true",
+            "access_token": access_token,
+        },
+        timeout=60,
+    )
+    payload: dict[str, Any] = r.json()
+    if r.status_code >= 400 or "error" in payload:
+        raise RuntimeError(f"Create carousel item failed ({r.status_code}): {payload}")
+    cid = payload.get("id")
+    if not cid:
+        raise RuntimeError(f"No carousel item id in response: {payload}")
+    return cid
+
+
+def graph_create_carousel_container(
+    media_root: str,
+    ig_user_id: str,
+    access_token: str,
+    children: Sequence[str],
+    caption: str,
+) -> str:
+    r = requests.post(
+        f"{media_root}/{ig_user_id}/media",
+        params={
+            "media_type": "CAROUSEL",
+            "children": ",".join(children),
+            "caption": caption[:2200],
+            "access_token": access_token,
+        },
+        timeout=60,
+    )
+    payload: dict[str, Any] = r.json()
+    if r.status_code >= 400 or "error" in payload:
+        raise RuntimeError(f"Create carousel container failed ({r.status_code}): {payload}")
+    cid = payload.get("id")
+    if not cid:
+        raise RuntimeError(f"No carousel container id in response: {payload}")
+    return cid
+
+
+def publish_jpeg_carousel_post(
+    *,
+    jpeg_paths: Sequence[Path],
+    caption: str,
+    access_token: str,
+    instagram_business_id: str,
+    imgur_client_id: str | None = None,
+    facebook_page_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Publish a multi-image carousel (2-10 slides).
+
+    Each slide is staged to a public URL and registered as a carousel item, then one
+    parent container carries the caption. Instagram rejects fewer than 2 or more than
+    10 children, so the caller must slice before calling.
+    """
+    if not 2 <= len(jpeg_paths) <= 10:
+        raise ValueError(f"Instagram carousels take 2-10 images, got {len(jpeg_paths)}")
+
+    media_root = media_graph_root()
+    children: list[str] = []
+    image_urls: list[str] = []
+
+    for i, path in enumerate(jpeg_paths, start=1):
+        public_url = stage_public_image_url(
+            jpeg_path=path,
+            access_token=access_token,
+            instagram_business_id=instagram_business_id,
+            imgur_client_id=imgur_client_id,
+            facebook_page_id=facebook_page_id,
+            media_root=media_root,
+        )
+        image_urls.append(public_url)
+        item_id = graph_create_carousel_item(media_root, instagram_business_id, access_token, public_url)
+        graph_wait_container_ready(media_root, item_id, access_token)
+        children.append(item_id)
+        logger.info("Carousel slide %s/%s staged (container %s)", i, len(jpeg_paths), item_id)
+
+    parent = graph_create_carousel_container(
+        media_root, instagram_business_id, access_token, children, caption
+    )
+    graph_wait_container_ready(media_root, parent, access_token)
+    pub_id = graph_publish_container(media_root, instagram_business_id, parent, access_token)
+    return {
+        "container_id": parent,
+        "instagram_media_id": pub_id,
+        "children": children,
+        "image_urls_used": image_urls,
+    }

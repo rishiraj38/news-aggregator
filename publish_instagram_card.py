@@ -60,6 +60,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_USER = "rishiraj438gt@gmail.com"
 OUT_DIR = Path("outputs") / "instagram"
+# Mirrors web/src/lib/site.ts. Set HELIX_WEBSITE_URL / HELIX_INSTAGRAM_HANDLE to override;
+# keep these in step if the site moves to a custom domain.
+DEFAULT_SITE_URL = "https://helix-seven-eta.vercel.app"
+DEFAULT_IG_HANDLE = "@formula1_boys_69"
 GRAPH_ME = "https://graph.facebook.com/v21.0/me"
 GRAPH_ACCOUNTS = "https://graph.facebook.com/v21.0/me/accounts"
 
@@ -341,49 +345,70 @@ def _normalize_curator_digest_id(raw: object) -> str:
     return s
 
 
-def _digest_from_curator_pick(digests: list[dict], ranked_articles: list) -> dict:
+def _digests_from_curator_picks(digests: list[dict], ranked_articles: list, limit: int) -> list[dict]:
     """
-    Map curator ranked output to one digest dict. Groq ordering is unreliable, so sort by rank.
-    Tolerates minor id mismatches; falls back to newest digest (`digests` is created_at DESC).
+    Top `limit` distinct digests in curator rank order.
+
+    Curator ids arrive with stray quotes and whitespace, so ids are matched exactly
+    first and then with whitespace collapsed. Tops up with the newest unposted
+    digests when the curator returns fewer usable ids than we need.
     """
     by_exact = {str(d["id"]).strip(): d for d in digests}
     collapsed = {"".join(str(d["id"]).split()): d for d in digests}
 
     def sort_key(art: object):
-        rank = getattr(art, "rank", 999)
-        score = getattr(art, "relevance_score", 0.0)
         try:
-            r_val = int(rank)
+            r_val = int(getattr(art, "rank", 999))
         except (TypeError, ValueError):
             r_val = 999
         try:
-            sc = float(score)
+            sc = float(getattr(art, "relevance_score", 0.0))
         except (TypeError, ValueError):
             sc = 0.0
         return (r_val, -sc)
 
+    picked: list[dict] = []
+    seen: set[str] = set()
     for art in sorted(ranked_articles, key=sort_key):
+        if len(picked) >= limit:
+            break
         nid = _normalize_curator_digest_id(getattr(art, "digest_id", None))
         if not nid:
             continue
-        if nid in by_exact:
-            return by_exact[nid]
-        snug = "".join(nid.split())
-        if snug in collapsed:
-            logger.warning(
-                "Curator digest_id matched after collapsing whitespace (%r)",
-                getattr(art, "digest_id", None),
-            )
-            return collapsed[snug]
+        row = by_exact.get(nid) or collapsed.get("".join(nid.split()))
+        if row is None or str(row["id"]) in seen:
+            continue
+        seen.add(str(row["id"]))
+        picked.append(row)
 
-    top_pick = getattr(ranked_articles[0], "digest_id", None) if ranked_articles else None
-    logger.warning(
-        "Curator digest_id did not match any row (example top pick=%r). "
-        "Valid ids (sample): %s. Using newest digest in window.",
-        top_pick,
-        list(by_exact.keys())[:6],
-    )
-    return digests[0]
+    for row in digests:  # newest-first top-up
+        if len(picked) >= limit:
+            break
+        if str(row["id"]) not in seen:
+            seen.add(str(row["id"]))
+            picked.append(row)
+
+    if not picked:
+        logger.warning("Curator returned no usable digest ids; falling back to newest digests")
+        picked = digests[:limit]
+    return picked[:limit]
+
+
+def _story_topic_label(article_type: str) -> str:
+    """Chip text for a slide, e.g. `topic_startup_ychn` → `Startups`."""
+    from app.topic_packs.registry import TOPIC_LABELS, _topic_from_article_type
+
+    topic = _topic_from_article_type(article_type or "")
+    if not topic:
+        return "Briefing"
+    label = TOPIC_LABELS.get(topic, topic)
+    return label.split("&")[0].strip().split(",")[0].strip()
+
+
+def _story_topic_id(article_type: str) -> str:
+    from app.topic_packs.registry import _topic_from_article_type
+
+    return _topic_from_article_type(article_type or "") or ""
 
 
 def main() -> int:
@@ -395,7 +420,18 @@ def main() -> int:
         default=72,
         help="Digest lookback window (keep modest — Groq curator pays per-token on the stacked prompt)",
     )
-    ap.add_argument("--dry-run", action="store_true", help="Only write JPEG; skip Meta/third-party uploads")
+    ap.add_argument("--dry-run", action="store_true", help="Only write JPEGs; skip Meta/third-party uploads")
+    ap.add_argument(
+        "--single",
+        action="store_true",
+        help="Post one breaking-news card instead of the multi-story carousel",
+    )
+    ap.add_argument(
+        "--slides",
+        type=int,
+        default=int(os.getenv("INSTAGRAM_CAROUSEL_STORIES", "5")),
+        help="Story slides in the carousel (cover + stories + CTA must stay ≤10)",
+    )
     ap.add_argument("--publish", action="store_true", help="Publish via Instagram Graph (needs env tokens)")
     ap.add_argument("--main", type=str, default="", help="Override red headline")
     ap.add_argument("--detail", type=str, default="", help="Override white detail block")
@@ -433,7 +469,10 @@ def main() -> int:
     from app.agent.curator_agent import CuratorAgent
     from app.services.process_email import _resolve_thumbnail_for_digest
     from app.services.news_graphic import BreakingGraphicSpec, render_breaking_news_card, save_card
-    from app.services.instagram_publish import publish_jpeg_feed_post
+    from app.services.carousel_graphic import CarouselSpec, Story, render_carousel, save_slides
+    from app.services.social_copy import CaptionStory, build_carousel_caption, build_single_caption
+    from app.services.mail_links import instagram_handle_for_display, website_url
+    from app.services.instagram_publish import publish_jpeg_carousel_post, publish_jpeg_feed_post
 
     Base.metadata.create_all(engine)
     ensure_image_url_columns()
@@ -479,34 +518,88 @@ def main() -> int:
         logger.error("Curator returned empty.")
         return 1
 
-    d = _digest_from_curator_pick(digests, ranked)
-
-    og_cache: dict = {}
-    thumb_url = _resolve_thumbnail_for_digest(d, og_cache)
-
-    main_h = args.main.strip() or _main_headline_from_title(d["title"])
-    detail = args.detail.strip() or _detail_from_summary(d["summary"], d["title"])
-    bg = args.bg_url.strip() or thumb_url
-
-    spec = BreakingGraphicSpec(
-        main_headline=main_h,
-        detail_text=detail,
-        background_image_url=bg,
-        ticker_text=os.getenv("NEWS_GRAPHIC_TICKER", "BREAKING NEWS"),
-        logo_path=logo_png,
-    )
-    rgb = render_breaking_news_card(spec)
-    slug = _slug(d["title"])
     ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    outfile = OUT_DIR / f"{ts}-{slug}.jpg"
-    save_card(rgb, outfile)
-    logger.info("Wrote card: %s", outfile.resolve())
+    og_cache: dict = {}
+    site = website_url() or DEFAULT_SITE_URL
+    handle = instagram_handle_for_display() or DEFAULT_IG_HANDLE
+
+    # A carousel is cover + N stories + CTA, and Instagram allows at most 10 images.
+    story_budget = max(1, min(8, args.slides))
+    want = 1 if args.single else story_budget
+    picks = _digests_from_curator_picks(digests, ranked, want)
+    use_carousel = not args.single and len(picks) >= 2
+
+    jpeg_paths: list[Path] = []
+    if use_carousel:
+        stories = [
+            Story(
+                title=row["title"],
+                summary=row.get("summary", "") or "",
+                url=row.get("url", "") or "",
+                image_url=_resolve_thumbnail_for_digest(row, og_cache),
+                topic_label=_story_topic_label(row.get("article_type", "")),
+            )
+            for row in picks
+        ]
+        slides = render_carousel(
+            CarouselSpec(
+                stories=stories,
+                site_url=site,
+                handle=handle,
+                max_story_slides=story_budget,
+            )
+        )
+        jpeg_paths = save_slides(slides, OUT_DIR, f"{ts}-carousel")
+        caption = build_carousel_caption(
+            [
+                CaptionStory(
+                    title=row["title"],
+                    summary=row.get("summary", "") or "",
+                    url=row.get("url", "") or "",
+                    topic=_story_topic_id(row.get("article_type", "")),
+                )
+                for row in picks
+            ],
+            site_url=site,
+            handle=handle,
+        )
+        logger.info(
+            "Wrote %d carousel slides (%d stories) → %s",
+            len(jpeg_paths),
+            len(stories),
+            OUT_DIR.resolve(),
+        )
+    else:
+        d = picks[0]
+        thumb_url = _resolve_thumbnail_for_digest(d, og_cache)
+        spec = BreakingGraphicSpec(
+            main_headline=args.main.strip() or _main_headline_from_title(d["title"]),
+            detail_text=args.detail.strip() or _detail_from_summary(d["summary"], d["title"]),
+            background_image_url=args.bg_url.strip() or thumb_url,
+            ticker_text=os.getenv("NEWS_GRAPHIC_TICKER", "BREAKING NEWS"),
+            logo_path=logo_png,
+        )
+        outfile = OUT_DIR / f"{ts}-{_slug(d['title'])}.jpg"
+        save_card(render_breaking_news_card(spec), outfile)
+        jpeg_paths = [outfile]
+        caption = build_single_caption(
+            CaptionStory(
+                title=d["title"],
+                summary=d.get("summary", "") or "",
+                url=d.get("url", "") or "",
+                topic=_story_topic_id(d.get("article_type", "")),
+            ),
+            site_url=site,
+            handle=handle,
+        )
+        logger.info("Wrote card: %s", outfile.resolve())
 
     if not args.publish:
         if args.dry_run:
             logger.info("Dry-run: no Meta calls.")
         else:
-            logger.info("Card saved. Pass --publish to post (needs tokens).")
+            logger.info("Images saved. Pass --publish to post (needs tokens).")
+        print("\n----- caption -----\n" + caption + "\n-------------------\n")
         return 0
 
     token = sanitize_meta_access_token(os.getenv("META_ACCESS_TOKEN", ""))
@@ -528,31 +621,34 @@ def main() -> int:
             mode,
         )
 
-    caption_lines = [
-        d["title"],
-        "",
-        d.get("summary", "")[:2100],
-        "",
-        "Read more: " + d.get("url", ""),
-        "",
-        "#ainews #tech #newsletter",
-    ]
-    caption = "\n".join(x for x in caption_lines if x is not None)[:2100]
-
     try:
-        result = publish_jpeg_feed_post(
-            jpeg_path=outfile if not bypass_url else None,
-            caption=caption,
-            access_token=token,
-            instagram_business_id=ig_id,
-            imgur_client_id=imgur_id or None,
-            image_url=bypass_url or None,
-            facebook_page_id=fb_page or None,
-        )
+        if use_carousel:
+            if bypass_url:
+                # One fixed URL cannot represent several different slides.
+                logger.warning("INSTAGRAM_SOURCE_IMAGE_URL is ignored for carousels; staging each slide.")
+            result = publish_jpeg_carousel_post(
+                jpeg_paths=jpeg_paths,
+                caption=caption,
+                access_token=token,
+                instagram_business_id=ig_id,
+                imgur_client_id=imgur_id or None,
+                facebook_page_id=fb_page or None,
+            )
+        else:
+            result = publish_jpeg_feed_post(
+                jpeg_path=jpeg_paths[0] if not bypass_url else None,
+                caption=caption,
+                access_token=token,
+                instagram_business_id=ig_id,
+                imgur_client_id=imgur_id or None,
+                image_url=bypass_url or None,
+                facebook_page_id=fb_page or None,
+            )
         logger.info("Published Instagram media id: %s", result.get("instagram_media_id"))
-        # Mark this digest so the next run picks a different story
-        repo.mark_digest_posted_instagram(d["id"])
-        logger.info("Marked digest %s as posted to Instagram", d["id"])
+        # Mark every story used so the next run picks different ones
+        for row in picks:
+            repo.mark_digest_posted_instagram(row["id"])
+        logger.info("Marked %d digest(s) as posted to Instagram", len(picks))
         return 0
     except Exception as e:
         logger.error("%s", e)

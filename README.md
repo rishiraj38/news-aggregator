@@ -9,7 +9,7 @@
 
 Every day, Helix ingests ~400 articles from 13 sources, summarises each one with an
 LLM, ranks them against each subscriber's interests, and delivers a personalised
-email — then publishes the top story as an Instagram card. It runs unattended on
+email — then publishes the day's top stories as an Instagram carousel. It runs unattended on
 GitHub Actions cron, with a Next.js dashboard where subscribers pick what they want.
 
 ---
@@ -39,8 +39,8 @@ flowchart TD
     CUR --> MAIL["Personalised HTML email<br/>via SMTP"]
     CUR -.->|"run looks broken"| AL["Operational alert<br/>+ non-zero exit"]
 
-    DBD --> PUB["<b>4 · PUBLISH</b><br/><i>top unposted story to<br/>1080x1350 card</i>"]
-    PUB --> IG["Instagram<br/>Graph API"]
+    DBD --> PUB["<b>4 · PUBLISH</b><br/><i>top 5 unposted stories to a<br/>1080x1350 carousel</i>"]
+    PUB --> IG["Instagram<br/>Graph API<br/><i>cover + stories + CTA</i>"]
 
     WEB["Next.js dashboard<br/><i>Clerk auth · Prisma</i>"] <-->|"topics + keywords"| DBD
 
@@ -227,7 +227,9 @@ sequenceDiagram
   it landed, and exactly which articles were in it
 - Next.js dashboard with Clerk auth, topic picker, and keyword editor
 - Trial lifecycle with warning and expiry emails
-- Instagram card generation (Pillow) and publishing
+- **Instagram carousel** — a cover slide, one slide per story and a call-to-action
+  slide, rendered with Pillow in a single design system, captioned with a rotating
+  hashtag set, and published as one multi-image post
 
 ---
 
@@ -239,7 +241,7 @@ sequenceDiagram
 | LLM | Groq (`openai/gpt-oss-120b`) via the OpenAI-compatible SDK |
 | Database | PostgreSQL (Neon), shared by the pipeline and the web app |
 | Ingest | feedparser, YouTube Data API v3, youtube-transcript-api, HN Algolia |
-| Images | Pillow (1080×1350 Instagram cards) |
+| Images | Pillow (1080×1350 carousel slides, bundled Inter typeface) |
 | Frontend | Next.js (App Router), Clerk, Prisma, Tailwind |
 | Orchestration | GitHub Actions cron — no always-on server |
 | Tests | pytest (offline, no DB or API keys needed) |
@@ -284,8 +286,10 @@ DIGEST_EMAIL_TEST_ONLY=you@example.com python -m app.daily_runner
 python scripts/set_user_topics.py you@example.com technology,startups
 python scripts/set_user_keywords.py you@example.com "ai agents,nvidia earnings"
 
-# Instagram card without publishing
+# Instagram carousel (writes JPEGs + prints the caption, publishes nothing)
 uv run python publish_instagram_card.py --dry-run
+uv run python publish_instagram_card.py --dry-run --slides 6   # more story slides
+uv run python publish_instagram_card.py --dry-run --single     # old one-image card
 ```
 
 The web app:
