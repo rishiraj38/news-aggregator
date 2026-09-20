@@ -49,6 +49,8 @@ from app.services.carousel_graphic import (
 
 logger = logging.getLogger(__name__)
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
 REEL_W = 1080
 REEL_H = 1920
 GUTTER = 88
@@ -70,6 +72,8 @@ class ReelSpec:
     story_seconds: float = 5.4
     cta_seconds: float = 3.0
     audio_path: Optional[str] = None
+    audio_start: float = 0.0
+    audio_volume: float = 0.8
     cover_title: str = "TODAY IN AI & TECH"
 
 
@@ -89,6 +93,37 @@ def ffmpeg_binary() -> str:
             "or set HELIX_FFMPEG to its path."
         )
     return found
+
+
+BUNDLED_AUDIO = _REPO_ROOT / "assets" / "audio"
+
+
+def pick_music_bed(date: Optional[datetime] = None) -> Optional[Path]:
+    """
+    The track for today's reel.
+
+    HELIX_REEL_AUDIO wins; otherwise the bundled CC0 beds are rotated by day so a
+    daily reel doesn't use the same music every time. HELIX_REEL_SILENT=true
+    renders without audio. Instagram's own trending audio can only be attached by
+    posting from the app, never through the API — so the bundled tracks are CC0,
+    which Content ID has nothing to match against.
+    """
+    if os.getenv("HELIX_REEL_SILENT", "").strip().lower() in ("1", "true", "yes"):
+        return None
+
+    override = os.getenv("HELIX_REEL_AUDIO", "").strip()
+    if override:
+        path = Path(override).expanduser()
+        if path.is_file():
+            return path
+        logger.warning("HELIX_REEL_AUDIO points at a missing file (%s)", override)
+        return None
+
+    beds = sorted(BUNDLED_AUDIO.glob("*.mp3"))
+    if not beds:
+        return None
+    day = (date or datetime.now(timezone.utc)).timetuple().tm_yday
+    return beds[day % len(beds)]
 
 
 def _run(cmd: list[str]) -> None:
@@ -420,22 +455,29 @@ def build_reel(spec: ReelSpec, out_path: Path, work_dir: Optional[Path] = None) 
         for clip in clips:
             cmd += ["-i", str(clip)]
 
-        audio = (spec.audio_path or os.getenv("HELIX_REEL_AUDIO", "")).strip()
         runtime = total_seconds(spec, len(stories))
-        if audio and Path(audio).is_file():
-            cmd += ["-i", audio]
-            audio_idx = len(clips)
-            filt = f"{chain};[{audio_idx}:a]afade=t=out:st={max(0.0, runtime - 1.2):.2f}:d=1.2[a]"
+        audio = Path(spec.audio_path).expanduser() if spec.audio_path else pick_music_bed(spec.date)
+        if audio and audio.is_file():
+            # -stream_loop covers a bed shorter than the reel; atrim + -t bound the
+            # result. `-shortest` would instead have cut the *video* short.
+            cmd += ["-stream_loop", "-1", "-ss", f"{max(0.0, spec.audio_start):.2f}", "-i", str(audio)]
+            ai = len(clips)
+            filt = (
+                f"{chain};[{ai}:a]atrim=0:{runtime:.3f},asetpts=N/SR/TB,"
+                f"volume={spec.audio_volume:.2f},afade=t=in:st=0:d=0.8,"
+                f"afade=t=out:st={max(0.0, runtime - 1.5):.2f}:d=1.5[a]"
+            )
             cmd += [
                 "-filter_complex", filt, "-map", f"[{last}]", "-map", "[a]",
-                "-c:a", "aac", "-b:a", "160k", "-shortest",
+                "-c:a", "aac", "-b:a", "192k",
             ]
+            logger.info("Reel audio bed: %s", audio.name)
         else:
-            if audio:
-                logger.warning("HELIX_REEL_AUDIO points at a missing file (%s) — rendering silent", audio)
             cmd += ["-filter_complex", chain, "-map", f"[{last}]"]
+            logger.info("Reel rendering without audio")
 
         cmd += [
+            "-t", f"{runtime:.3f}",
             "-r", str(FPS), "-c:v", "libx264", "-preset", "medium", "-crf", "20",
             "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(out_path),
         ]

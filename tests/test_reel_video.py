@@ -76,3 +76,51 @@ def test_missing_ffmpeg_is_a_clear_error(monkeypatch):
     monkeypatch.setattr(rv.shutil, "which", lambda _: None)
     with pytest.raises(RuntimeError, match="ffmpeg not found"):
         rv.ffmpeg_binary()
+
+
+def test_music_bed_rotates_by_day(monkeypatch, tmp_path):
+    monkeypatch.delenv("HELIX_REEL_AUDIO", raising=False)
+    monkeypatch.delenv("HELIX_REEL_SILENT", raising=False)
+    beds = tmp_path / "audio"
+    beds.mkdir()
+    for name in ("bed-01.mp3", "bed-02.mp3", "bed-03.mp3"):
+        (beds / name).write_bytes(b"x")
+    monkeypatch.setattr(rv, "BUNDLED_AUDIO", beds)
+
+    from datetime import datetime, timezone
+
+    picks = {rv.pick_music_bed(datetime(2026, 9, d, tzinfo=timezone.utc)).name for d in range(1, 8)}
+    assert len(picks) == 3, "a daily reel should not reuse one track forever"
+
+
+def test_audio_can_be_disabled_and_overridden(monkeypatch, tmp_path):
+    monkeypatch.setenv("HELIX_REEL_SILENT", "true")
+    assert rv.pick_music_bed() is None
+
+    monkeypatch.delenv("HELIX_REEL_SILENT")
+    monkeypatch.setenv("HELIX_REEL_AUDIO", str(tmp_path / "nope.mp3"))
+    assert rv.pick_music_bed() is None, "a missing override must not fall back silently to a bed"
+
+    real = tmp_path / "mine.mp3"
+    real.write_bytes(b"x")
+    monkeypatch.setenv("HELIX_REEL_AUDIO", str(real))
+    assert rv.pick_music_bed() == real
+
+
+def test_audio_never_truncates_the_video(monkeypatch, tmp_path):
+    """`-shortest` with a bed shorter than the reel would cut the video short."""
+    monkeypatch.setattr(rv, "ffmpeg_binary", lambda: "ffmpeg")
+    calls: list[list[str]] = []
+    monkeypatch.setattr(rv, "_run", lambda cmd: calls.append(cmd))
+    bed = tmp_path / "bed.mp3"
+    bed.write_bytes(b"x")
+
+    spec = ReelSpec(stories=STORIES[:1], audio_path=str(bed))
+    rv.build_reel(spec, tmp_path / "out.mp4", work_dir=tmp_path / "work")
+
+    final = calls[-1]
+    assert "-shortest" not in final
+    assert "-stream_loop" in final
+    runtime = total_seconds(spec, 1)
+    assert final[final.index("-t") + 1] == f"{runtime:.3f}"
+    assert f"atrim=0:{runtime:.3f}" in " ".join(final)
