@@ -87,6 +87,7 @@ a fallback for when only one unposted story exists.
 ├── app/
 │   ├── .env                    # Local secrets (NEVER commit)
 │   ├── config.py               # SEARCH_QUERIES for YouTube
+│   ├── env_utils.py            # env_int/env_float/env_str (empty CI vars are not values)
 │   ├── daily_runner.py         # Pipeline orchestrator (5 stages)
 │   ├── runner.py               # Scraper registry & execution
 │   ├── main.py                 # FastAPI/Streamlit dashboard (secondary)
@@ -432,6 +433,9 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 
 26. **Reel containers transcode, so they need a long poll**: photo containers are ready in seconds, a Reel can sit in `IN_PROGRESS` for minutes. `publish_video_reel()` waits up to 600s. Video staging also skips most anonymous hosts — only Cloudinary (`/video/upload`, not `/image/upload`) and catbox serve MP4 with a content type Meta will fetch.
 
+
+27. **An unset GitHub Actions variable is an empty string, not absent**: `VAR: ${{ vars.X }}` with no repository variable set renders as `""`, so `os.getenv("VAR", "5")` returns `""` and `int("")` raises. This killed the Instagram workflow with `ValueError: invalid literal for int() with base 10: ''` while every secret was configured correctly. Read numeric settings through `env_int()` / `env_float()` / `env_str()` in `app/env_utils.py`, which treat empty, whitespace and unparseable values as "not set" and clamp to a range. In workflows, also follow the existing convention of `${{ vars.X || '5' }}`.
+
 ---
 
 ## Subscriber Tiers & Admin Console
@@ -526,6 +530,7 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_carousel_graphic.py` | Slide count and canvas size, the 10-image cap, headline fitting, and that a story with no image never fetches |
 | `test_instagram_carousel.py` | Curator rank order, de-duplication, top-up, and the Graph API 2-10 child guard |
 | `test_reel_video.py` | Runtime after crossfades, xfade offsets, the animated progress bar, single-frame zoompan input, and text fitting |
+| `test_env_utils.py` | Empty/blank/garbage env values fall back and clamp — the empty-Actions-variable crash |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads

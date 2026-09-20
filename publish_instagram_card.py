@@ -51,6 +51,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from app.env_utils import env_int, env_str
+
 _REPO_ROOT = Path(__file__).resolve().parent
 load_dotenv(_REPO_ROOT / "app" / ".env")
 load_dotenv(_REPO_ROOT / ".env")
@@ -434,7 +436,7 @@ def main() -> int:
     ap.add_argument(
         "--slides",
         type=int,
-        default=int(os.getenv("INSTAGRAM_CAROUSEL_STORIES", "5")),
+        default=env_int("INSTAGRAM_CAROUSEL_STORIES", 5, minimum=1, maximum=8),
         help="Story slides in the carousel (cover + stories + CTA must stay ≤10)",
     )
     ap.add_argument("--publish", action="store_true", help="Publish via Instagram Graph (needs env tokens)")
@@ -513,7 +515,7 @@ def main() -> int:
         logger.error("All recent digests already posted to Instagram.")
         return 1
 
-    cap = max(12, min(240, int(os.getenv("INSTAGRAM_CURATOR_DIGEST_CAP", "40"))))
+    cap = env_int("INSTAGRAM_CURATOR_DIGEST_CAP", 40, minimum=12, maximum=240)
     if len(digests) > cap:
         logger.info(
             "Instagram curator: trimming %s digests → newest %s (env INSTAGRAM_CURATOR_DIGEST_CAP)",
@@ -535,7 +537,7 @@ def main() -> int:
 
     # A carousel is cover + N stories + CTA, and Instagram allows at most 10 images.
     story_budget = max(1, min(8, args.slides))
-    fmt = (os.getenv("INSTAGRAM_POST_FORMAT", "carousel") or "carousel").strip().lower()
+    fmt = env_str("INSTAGRAM_POST_FORMAT", "carousel").lower()
     if args.reel:
         fmt = "reel"
     elif args.single:

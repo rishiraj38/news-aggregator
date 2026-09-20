@@ -1,5 +1,7 @@
 import logging
 import os
+
+from app.env_utils import env_float, env_int
 import time
 from typing import List, Sequence
 
@@ -15,16 +17,16 @@ logger = logging.getLogger(__name__)
 # 6 meant ~23 Groq calls for a single subscriber, which spent most of the run
 # in 429 backoff. The recursive TPM split below already handles oversized
 # batches, so a larger default is safe and roughly halves the request count.
-CURATOR_CHUNK_SIZE = max(1, int(os.getenv("CURATOR_CHUNK_SIZE", "12")))
-CURATOR_DIGEST_SUMMARY_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_SUMMARY_CHARS", "260")))
-CURATOR_DIGEST_TITLE_CHARS = max(80, int(os.getenv("CURATOR_DIGEST_TITLE_CHARS", "200")))
-GROQ_CHUNK_SLEEP_SECONDS = float(os.getenv("GROQ_CHUNK_SLEEP_SECONDS", "10") or 0)
-CURATOR_MAX_OUTPUT_TOKENS = max(1024, int(os.getenv("CURATOR_MAX_OUTPUT_TOKENS", "8000") or 8000))
+CURATOR_CHUNK_SIZE = env_int("CURATOR_CHUNK_SIZE", 12, minimum=1)
+CURATOR_DIGEST_SUMMARY_CHARS = env_int("CURATOR_DIGEST_SUMMARY_CHARS", 260, minimum=80)
+CURATOR_DIGEST_TITLE_CHARS = env_int("CURATOR_DIGEST_TITLE_CHARS", 200, minimum=80)
+GROQ_CHUNK_SLEEP_SECONDS = env_float("GROQ_CHUNK_SLEEP_SECONDS", 10.0, minimum=0.0)
+CURATOR_MAX_OUTPUT_TOKENS = env_int("CURATOR_MAX_OUTPUT_TOKENS", 8000, minimum=1024)
 
-CURATOR_MAX_INTEREST_LINES = max(10, int(os.getenv("CURATOR_MAX_INTEREST_LINES", "40")))
-CURATOR_INTEREST_LINE_CHARS = max(40, int(os.getenv("CURATOR_INTEREST_LINE_CHARS", "260")))
-CURATOR_PREF_TEXT_CHARS = max(200, int(os.getenv("CURATOR_PREF_TEXT_CHARS", "2800")))
-CURATOR_BACKGROUND_CHARS = max(40, int(os.getenv("CURATOR_BACKGROUND_CHARS", "520")))
+CURATOR_MAX_INTEREST_LINES = env_int("CURATOR_MAX_INTEREST_LINES", 40, minimum=10)
+CURATOR_INTEREST_LINE_CHARS = env_int("CURATOR_INTEREST_LINE_CHARS", 260, minimum=40)
+CURATOR_PREF_TEXT_CHARS = env_int("CURATOR_PREF_TEXT_CHARS", 2800, minimum=200)
+CURATOR_BACKGROUND_CHARS = env_int("CURATOR_BACKGROUND_CHARS", 520, minimum=40)
 
 
 class RankedArticle(BaseModel):

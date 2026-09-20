@@ -69,9 +69,9 @@ jobs:
           INSTAGRAM_SOURCE_IMAGE_URL: ${{ secrets.INSTAGRAM_SOURCE_IMAGE_URL }}
           NEWS_GRAPHIC_TICKER: ${{ vars.NEWS_GRAPHIC_TICKER }}
           # Carousel: slide count plus the CTA slide's links
-          INSTAGRAM_CAROUSEL_STORIES: ${{ vars.INSTAGRAM_CAROUSEL_STORIES }}
+          INSTAGRAM_CAROUSEL_STORIES: ${{ vars.INSTAGRAM_CAROUSEL_STORIES || '5' }}
           # carousel (default) | reel | single
-          INSTAGRAM_POST_FORMAT: ${{ vars.INSTAGRAM_POST_FORMAT }}
+          INSTAGRAM_POST_FORMAT: ${{ vars.INSTAGRAM_POST_FORMAT || 'carousel' }}
           INSTAGRAM_SOURCE_VIDEO_URL: ${{ secrets.INSTAGRAM_SOURCE_VIDEO_URL }}
           HELIX_REEL_AUDIO: ${{ vars.HELIX_REEL_AUDIO }}
           HELIX_WEBSITE_URL: ${{ vars.HELIX_WEBSITE_URL }}
