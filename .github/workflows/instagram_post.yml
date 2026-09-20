@@ -1,5 +1,6 @@
 # Build a multi-story carousel from the top-ranked digests and publish it (Instagram Graph API).
-# Slides: cover + one per story + call-to-action. `--single` falls back to the one-image card.
+# Slides: cover + one per story + call-to-action. Set the repository variable
+# INSTAGRAM_POST_FORMAT to `reel` for a 9:16 video instead, or `single` for the old card.
 # Does not send digest email — keep this separate from `daily_digest.yml`.
 #
 # JPEG staging on runners: anonymous hosts (Catbox, 0x0.st, file.io, transfer.sh) are usually blocked or down.
@@ -41,6 +42,11 @@ jobs:
       - name: Install dependencies
         run: uv pip install -r requirements.txt --system
 
+      # Reels are rendered with ffmpeg. The runner image ships it, but install on demand
+      # so a runner image change can't silently break the post.
+      - name: Ensure ffmpeg is available
+        run: ffmpeg -version >/dev/null 2>&1 || sudo apt-get install -y ffmpeg
+
       - name: Publish Instagram card from latest digests
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -64,6 +70,10 @@ jobs:
           NEWS_GRAPHIC_TICKER: ${{ vars.NEWS_GRAPHIC_TICKER }}
           # Carousel: slide count plus the CTA slide's links
           INSTAGRAM_CAROUSEL_STORIES: ${{ vars.INSTAGRAM_CAROUSEL_STORIES }}
+          # carousel (default) | reel | single
+          INSTAGRAM_POST_FORMAT: ${{ vars.INSTAGRAM_POST_FORMAT }}
+          INSTAGRAM_SOURCE_VIDEO_URL: ${{ secrets.INSTAGRAM_SOURCE_VIDEO_URL }}
+          HELIX_REEL_AUDIO: ${{ vars.HELIX_REEL_AUDIO }}
           HELIX_WEBSITE_URL: ${{ vars.HELIX_WEBSITE_URL }}
           HELIX_INSTAGRAM_HANDLE: ${{ vars.HELIX_INSTAGRAM_HANDLE }}
           HELIX_LOGO_PATH: ${{ vars.HELIX_LOGO_PATH }}

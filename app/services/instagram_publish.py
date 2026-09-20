@@ -689,3 +689,144 @@ def publish_jpeg_carousel_post(
         "children": children,
         "image_urls_used": image_urls,
     }
+
+
+# Reels (video)
+
+def _cloudinary_upload_video(path: Path, *, cloud_name: str, upload_preset: str) -> str:
+    """Same unsigned preset as images, but Cloudinary needs the /video/ resource endpoint."""
+    rb = path.read_bytes()
+    if not rb:
+        raise ValueError(f"Empty file {path}")
+    r = requests.post(
+        f"https://api.cloudinary.com/v1_1/{cloud_name.strip()}/video/upload",
+        files={"file": (path.name or "reel.mp4", rb, "video/mp4")},
+        data={"upload_preset": upload_preset.strip()},
+        timeout=600,
+    )
+    try:
+        j: dict[str, Any] = r.json()
+    except Exception:
+        raise RuntimeError(f"cloudinary JSON parse ({r.status_code}) {r.text[:400]}") from None
+    if r.status_code >= 400 or isinstance(j.get("error"), dict):
+        raise RuntimeError(f"cloudinary rejected video ({r.status_code}): {j}")
+    picked = j.get("secure_url") or j.get("url")
+    if not isinstance(picked, str) or not picked.startswith("http"):
+        raise RuntimeError(f"cloudinary missing video URL ({r.status_code}): {j}")
+    return _https_url(picked)
+
+
+def _catbox_upload_video(path: Path) -> str:
+    rb = path.read_bytes()
+    if not rb:
+        raise ValueError(f"Empty file {path}")
+    name = path.name if path.name.lower().endswith(".mp4") else f"{path.name}.mp4"
+    r = requests.post(
+        "https://catbox.moe/user/api.php",
+        data={"reqtype": "fileupload"},
+        files={"fileToUpload": (name, rb, "video/mp4")},
+        timeout=600,
+    )
+    if not r.ok:
+        raise RuntimeError(f"catbox HTTP {r.status_code}: {r.text[:400]}")
+    url = _https_url(r.text.strip())
+    if not url.startswith("https://"):
+        raise RuntimeError(f"catbox unexpected body: {r.text[:160]}")
+    return url
+
+
+def upload_local_video_to_public_https(path: Path) -> str:
+    """
+    Public MP4 URL for the Reels container.
+
+    Cloudinary first when configured (reliable from CI), then catbox. The image
+    chain's other hosts either reject video or serve it with a content type Meta
+    refuses, so they are deliberately not tried here.
+    """
+    size_mb = path.stat().st_size / 1_000_000
+    if size_mb > 95:
+        raise ValueError(f"Reel is {size_mb:.0f}MB; keep it under ~95MB for upload hosts")
+
+    errors: list[str] = []
+    cloud = os.getenv("CLOUDINARY_CLOUD_NAME", "").strip()
+    preset = os.getenv("CLOUDINARY_UPLOAD_PRESET", "").strip()
+    if cloud and preset:
+        try:
+            url = _cloudinary_upload_video(path, cloud_name=cloud, upload_preset=preset)
+            logger.info("Reel staged via Cloudinary (%.1fMB)", size_mb)
+            return url
+        except Exception as exc:
+            errors.append(f"cloudinary: {exc}")
+            logger.warning("Cloudinary video upload failed, trying catbox (%s)", exc)
+
+    try:
+        url = _catbox_upload_video(path)
+        logger.info("Reel staged via catbox (%.1fMB)", size_mb)
+        return url
+    except Exception as exc:
+        errors.append(f"catbox: {exc}")
+
+    raise RuntimeError(
+        "Could not stage the reel to a public URL. Set CLOUDINARY_CLOUD_NAME + "
+        "CLOUDINARY_UPLOAD_PRESET, or INSTAGRAM_SOURCE_VIDEO_URL. Tried — " + "; ".join(errors)
+    )
+
+
+def graph_create_reel_container(
+    media_root: str,
+    ig_user_id: str,
+    access_token: str,
+    video_url: str,
+    caption: str,
+    share_to_feed: bool = True,
+) -> str:
+    r = requests.post(
+        f"{media_root}/{ig_user_id}/media",
+        params={
+            "media_type": "REELS",
+            "video_url": video_url[:2048],
+            "caption": caption[:2200],
+            "share_to_feed": "true" if share_to_feed else "false",
+            "access_token": access_token,
+        },
+        timeout=120,
+    )
+    payload: dict[str, Any] = r.json()
+    if r.status_code >= 400 or "error" in payload:
+        raise RuntimeError(f"Create reel container failed ({r.status_code}): {payload}")
+    cid = payload.get("id")
+    if not cid:
+        raise RuntimeError(f"No reel container id in response: {payload}")
+    return cid
+
+
+def publish_video_reel(
+    *,
+    video_path: Path | None = None,
+    video_url: str | None = None,
+    caption: str,
+    access_token: str,
+    instagram_business_id: str,
+    share_to_feed: bool = True,
+    ready_timeout_s: float = 600.0,
+) -> dict[str, Any]:
+    """
+    Publish one Reel.
+
+    Instagram transcodes the upload, so the container can sit in IN_PROGRESS for
+    minutes — much longer than a photo, hence the larger default timeout.
+    """
+    media_root = media_graph_root()
+    url = (video_url or "").strip()
+    if not url:
+        if video_path is None:
+            raise ValueError("publish_video_reel needs video_path or video_url")
+        url = upload_local_video_to_public_https(video_path)
+
+    container = graph_create_reel_container(
+        media_root, instagram_business_id, access_token, url, caption, share_to_feed
+    )
+    logger.info("Reel container %s created; waiting for Instagram to transcode", container)
+    graph_wait_container_ready(media_root, container, access_token, timeout_s=ready_timeout_s)
+    pub_id = graph_publish_container(media_root, instagram_business_id, container, access_token)
+    return {"container_id": container, "instagram_media_id": pub_id, "video_url_used": url}

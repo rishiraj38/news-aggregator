@@ -230,6 +230,8 @@ sequenceDiagram
 - **Instagram carousel** — a cover slide, one slide per story and a call-to-action
   slide, rendered with Pillow in a single design system, captioned with a rotating
   hashtag set, and published as one multi-image post
+- **Instagram Reel** — the same stories as a 9:16 video: slow push-in on each photo,
+  text that fades up, a progress bar and crossfades, assembled with ffmpeg
 
 ---
 
@@ -242,6 +244,7 @@ sequenceDiagram
 | Database | PostgreSQL (Neon), shared by the pipeline and the web app |
 | Ingest | feedparser, YouTube Data API v3, youtube-transcript-api, HN Algolia |
 | Images | Pillow (1080×1350 carousel slides, bundled Inter typeface) |
+| Video | ffmpeg (1080×1920 reels: zoompan, xfade, overlay) |
 | Frontend | Next.js (App Router), Clerk, Prisma, Tailwind |
 | Orchestration | GitHub Actions cron — no always-on server |
 | Tests | pytest (offline, no DB or API keys needed) |
@@ -290,6 +293,7 @@ python scripts/set_user_keywords.py you@example.com "ai agents,nvidia earnings"
 uv run python publish_instagram_card.py --dry-run
 uv run python publish_instagram_card.py --dry-run --slides 6   # more story slides
 uv run python publish_instagram_card.py --dry-run --single     # old one-image card
+uv run python publish_instagram_card.py --dry-run --reel       # 9:16 reel video (needs ffmpeg)
 ```
 
 The web app:

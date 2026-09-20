@@ -62,6 +62,7 @@ publish_instagram_card.py
 ├── render_carousel()                  → app/services/carousel_graphic.py (Pillow)
 │     cover slide + one slide per story + call-to-action slide
 ├── build_carousel_caption()           → app/services/social_copy.py (copy + hashtags)
+│     (--reel instead renders a 9:16 video → app/services/reel_video.py, ffmpeg)
 ├── Stages every slide to a public HTTPS URL (Cloudinary / anon hosts)
 ├── Publishes a CAROUSEL container via Meta Instagram Graph API
 └── Marks every used digest as posted_to_instagram="true" in DB
@@ -340,6 +341,10 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 | `NEWS_GRAPHIC_TICKER` | Red bar text on the `--single` card (default: "BREAKING NEWS") |
 | `INSTAGRAM_CAROUSEL_STORIES` | Story slides per carousel (default 5, max 8 — Instagram allows 10 images total) |
 | `HELIX_FONT_DIR` | Override the bundled Inter directory used by the carousel renderer |
+| `INSTAGRAM_POST_FORMAT` | `carousel` (default), `reel`, or `single` |
+| `HELIX_REEL_AUDIO` | Path to a music bed you have rights to; reels are silent without it |
+| `HELIX_FFMPEG` | ffmpeg binary path for reel rendering (default: `ffmpeg` on PATH) |
+| `INSTAGRAM_SOURCE_VIDEO_URL` | Public MP4 URL that bypasses video staging |
 | `HELIX_LOGO_PATH` | Custom logo PNG path |
 
 ---
@@ -419,6 +424,13 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 22. **The carousel ships its own typeface**: `assets/fonts/Inter*.ttf` are committed (OFL, licence alongside) because GitHub runners only have DejaVu, which is what made the old cards look generic. `_font_path()` still falls back to system fonts and finally `ImageFont.load_default()`, so rendering never hard-fails — but delete the bundle and CI output silently regresses to a different look. `HELIX_FONT_DIR` overrides the directory.
 
 23. **Each carousel consumes N stories**: every digest that appears on a slide is marked `posted_to_instagram="true"`, so a 5-slide post at 04:30 and another at 11:00 burns ~10 stories a day. With fewer than 2 unposted digests in the window the script automatically falls back to the single-image card rather than posting a one-slide "carousel", which the API rejects anyway.
+
+
+24. **`zoompan` multiplies frames — never loop its input**: `-loop 1 -i still.jpg` feeds zoompan an endless stream and it emits `d` frames *per input frame*, so a 5-second segment rendered ~26,000 frames and the job effectively hung. The background image is passed as a single frame (`-i bg.jpg`) and only the text overlay and progress bar are looped. Same class of trap as any filter with its own frame duplication.
+
+25. **In `drawbox`, `t` is thickness, not time**: a `w='...t...'` expression there silently evaluates against the border thickness, which is why the first progress bar rendered full-width on every frame instead of filling. The bar is an `overlay` whose `x` is time-driven — `overlay`, `fade` and `zoompan` do expose the timestamp as `t`.
+
+26. **Reel containers transcode, so they need a long poll**: photo containers are ready in seconds, a Reel can sit in `IN_PROGRESS` for minutes. `publish_video_reel()` waits up to 600s. Video staging also skips most anonymous hosts — only Cloudinary (`/video/upload`, not `/image/upload`) and catbox serve MP4 with a content type Meta will fetch.
 
 ---
 
@@ -513,6 +525,7 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_social_copy.py` | Caption structure, the 2200-char cap keeping the hashtag block, and hashtags rotating by day |
 | `test_carousel_graphic.py` | Slide count and canvas size, the 10-image cap, headline fitting, and that a story with no image never fetches |
 | `test_instagram_carousel.py` | Curator rank order, de-duplication, top-up, and the Graph API 2-10 child guard |
+| `test_reel_video.py` | Runtime after crossfades, xfade offsets, the animated progress bar, single-frame zoompan input, and text fitting |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads

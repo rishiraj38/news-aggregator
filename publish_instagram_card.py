@@ -422,6 +422,11 @@ def main() -> int:
     )
     ap.add_argument("--dry-run", action="store_true", help="Only write JPEGs; skip Meta/third-party uploads")
     ap.add_argument(
+        "--reel",
+        action="store_true",
+        help="Build and publish a 9:16 Reel video instead of the carousel (needs ffmpeg)",
+    )
+    ap.add_argument(
         "--single",
         action="store_true",
         help="Post one breaking-news card instead of the multi-story carousel",
@@ -472,7 +477,12 @@ def main() -> int:
     from app.services.carousel_graphic import CarouselSpec, Story, render_carousel, save_slides
     from app.services.social_copy import CaptionStory, build_carousel_caption, build_single_caption
     from app.services.mail_links import instagram_handle_for_display, website_url
-    from app.services.instagram_publish import publish_jpeg_carousel_post, publish_jpeg_feed_post
+    from app.services.reel_video import ReelSpec, build_reel, total_seconds
+    from app.services.instagram_publish import (
+        publish_jpeg_carousel_post,
+        publish_jpeg_feed_post,
+        publish_video_reel,
+    )
 
     Base.metadata.create_all(engine)
     ensure_image_url_columns()
@@ -525,13 +535,24 @@ def main() -> int:
 
     # A carousel is cover + N stories + CTA, and Instagram allows at most 10 images.
     story_budget = max(1, min(8, args.slides))
-    want = 1 if args.single else story_budget
-    picks = _digests_from_curator_picks(digests, ranked, want)
-    use_carousel = not args.single and len(picks) >= 2
+    fmt = (os.getenv("INSTAGRAM_POST_FORMAT", "carousel") or "carousel").strip().lower()
+    if args.reel:
+        fmt = "reel"
+    elif args.single:
+        fmt = "single"
+    if fmt not in ("carousel", "reel", "single"):
+        logger.warning("Unknown INSTAGRAM_POST_FORMAT=%r — falling back to carousel", fmt)
+        fmt = "carousel"
 
-    jpeg_paths: list[Path] = []
-    if use_carousel:
-        stories = [
+    want = 1 if fmt == "single" else story_budget
+    picks = _digests_from_curator_picks(digests, ranked, want)
+    # A one-slide carousel is rejected by the API; fall back to the single card.
+    if fmt == "carousel" and len(picks) < 2:
+        logger.info("Only %d unposted story available — posting a single card instead", len(picks))
+        fmt = "single"
+
+    def _stories() -> list:
+        return [
             Story(
                 title=row["title"],
                 summary=row.get("summary", "") or "",
@@ -541,16 +562,9 @@ def main() -> int:
             )
             for row in picks
         ]
-        slides = render_carousel(
-            CarouselSpec(
-                stories=stories,
-                site_url=site,
-                handle=handle,
-                max_story_slides=story_budget,
-            )
-        )
-        jpeg_paths = save_slides(slides, OUT_DIR, f"{ts}-carousel")
-        caption = build_carousel_caption(
+
+    def _caption() -> str:
+        return build_carousel_caption(
             [
                 CaptionStory(
                     title=row["title"],
@@ -563,6 +577,35 @@ def main() -> int:
             site_url=site,
             handle=handle,
         )
+
+    jpeg_paths: list[Path] = []
+    reel_path: Path | None = None
+
+    if fmt == "reel":
+        stories = _stories()
+        reel_spec = ReelSpec(
+            stories=stories, site_url=site, handle=handle, max_stories=story_budget
+        )
+        reel_path = build_reel(reel_spec, OUT_DIR / f"{ts}-reel.mp4")
+        caption = _caption()
+        logger.info(
+            "Wrote reel: %s (%.1fs, %d stories)",
+            reel_path.resolve(),
+            total_seconds(reel_spec, len(stories)),
+            len(stories),
+        )
+    elif fmt == "carousel":
+        stories = _stories()
+        slides = render_carousel(
+            CarouselSpec(
+                stories=stories,
+                site_url=site,
+                handle=handle,
+                max_story_slides=story_budget,
+            )
+        )
+        jpeg_paths = save_slides(slides, OUT_DIR, f"{ts}-carousel")
+        caption = _caption()
         logger.info(
             "Wrote %d carousel slides (%d stories) → %s",
             len(jpeg_paths),
@@ -598,7 +641,7 @@ def main() -> int:
         if args.dry_run:
             logger.info("Dry-run: no Meta calls.")
         else:
-            logger.info("Images saved. Pass --publish to post (needs tokens).")
+            logger.info("Saved locally. Pass --publish to post (needs tokens).")
         print("\n----- caption -----\n" + caption + "\n-------------------\n")
         return 0
 
@@ -613,7 +656,7 @@ def main() -> int:
         return 1
 
     # Image staging: unpublished FB Page upload (facebook Graph) then public uploads unless bypass URL set.
-    if not bypass_url and not fb_page:
+    if fmt != "reel" and not bypass_url and not fb_page:
         mode = (os.getenv("META_PUBLIC_IMAGE_UPLOAD", "auto") or "auto").strip()
         logger.info(
             "No INSTAGRAM_SOURCE_IMAGE_URL — will derive public JPEG URL "
@@ -622,7 +665,16 @@ def main() -> int:
         )
 
     try:
-        if use_carousel:
+        if fmt == "reel":
+            assert reel_path is not None
+            result = publish_video_reel(
+                video_path=reel_path,
+                video_url=os.getenv("INSTAGRAM_SOURCE_VIDEO_URL", "").strip() or None,
+                caption=caption,
+                access_token=token,
+                instagram_business_id=ig_id,
+            )
+        elif fmt == "carousel":
             if bypass_url:
                 # One fixed URL cannot represent several different slides.
                 logger.warning("INSTAGRAM_SOURCE_IMAGE_URL is ignored for carousels; staging each slide.")
