@@ -17,6 +17,10 @@ on:
         description: "Build the post and print the caption, but publish nothing"
         type: boolean
         default: false
+      test_video_upload:
+        description: "Only check that a video can be staged publicly (no post)"
+        type: boolean
+        default: false
       format:
         description: "Post format (default = INSTAGRAM_POST_FORMAT variable)"
         type: choice
@@ -36,7 +40,7 @@ concurrency:
 jobs:
   instagram-post:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -94,6 +98,12 @@ jobs:
           export META_PUBLIC_IMAGE_UPLOAD="${META_PUBLIC_IMAGE_UPLOAD:-cloudinary}"
 
           # inputs.* are empty on a schedule, so scheduled runs publish as before.
+          if [ "${{ inputs.test_video_upload }}" = "true" ]; then
+            echo "::notice::Checking the reel video staging chain only"
+            python publish_instagram_card.py --test-video-upload
+            exit 0
+          fi
+
           MODE="--publish"
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             MODE="--dry-run"

@@ -159,6 +159,50 @@ otherwise anon mirrors (Catbox → 0x0.st → file.io → transfer.sh).
         return 1
 
 
+def test_public_video_upload() -> int:
+    """
+    Check the video staging chain (Cloudinary /video/upload, then catbox) without
+    touching Meta. An unsigned Cloudinary preset is often image-only, and the
+    reel dry run never exercises staging — this is how you find that out before
+    a scheduled reel fails to publish.
+    """
+    import subprocess
+
+    from app.services.instagram_publish import upload_local_video_to_public_https
+    from app.services.reel_video import ffmpeg_binary
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    probe = OUT_DIR / ".video_upload_smoke.mp4"
+    try:
+        subprocess.run(
+            [
+                ffmpeg_binary(), "-y", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=0x0B1020:s=540x960:d=1",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(probe),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except Exception as exc:
+        logger.error("Could not render the probe clip: %s", exc)
+        return 1
+
+    try:
+        url = upload_local_video_to_public_https(probe)
+    except Exception as exc:
+        logger.error("%s", exc)
+        print(
+            "\nVideo staging failed. Reels need a public MP4 URL:\n"
+            "  • Cloudinary: the unsigned preset must allow video (Settings → Upload → "
+            "the preset → Resource type: Auto, and no image-only format whitelist)\n"
+            "  • or set INSTAGRAM_SOURCE_VIDEO_URL to a public .mp4 you host\n"
+        )
+        return 1
+
+    print(f"\nVideo upload OK — URL:\n{url}\n")
+    return 0
+
+
 def instagram_diagnose() -> int:
     """
     Sanity-check META_ACCESS_TOKEN + INSTAGRAM_BUSINESS_ID against Graph API.
@@ -445,6 +489,11 @@ def main() -> int:
     ap.add_argument("--bg-url", type=str, default="", help="Override background image URL")
     ap.add_argument("--instagram-diagnose", action="store_true", help="Check Meta token + resolve Page id (no DB)")
     ap.add_argument(
+        "--test-video-upload",
+        action="store_true",
+        help="Upload a 1-second probe clip through the reel staging chain (no Meta calls)",
+    )
+    ap.add_argument(
         "--test-upload",
         action="store_true",
         help="Upload a synthetic JPEG via public hosts (META_PUBLIC_IMAGE_UPLOAD)",
@@ -461,6 +510,9 @@ def main() -> int:
         help="JPEG path for --test-upload (omit for synthetic Pillow image)",
     )
     args = ap.parse_args()
+
+    if args.test_video_upload:
+        return test_public_video_upload()
 
     if args.test_upload or args.test_imgur:
         return test_public_image_upload(args.imgur_file)
