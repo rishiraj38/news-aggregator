@@ -10,19 +10,42 @@ def get_environment() -> str:
     return os.getenv("ENVIRONMENT", "LOCAL").upper()
 
 
+# The DBAPI this project actually installs (see requirements.txt).
+_PG_DRIVER = "psycopg2"
+
+
+def normalize_database_url(url: str) -> str:
+    """
+    Name the PostgreSQL driver in the URL instead of relying on SQLAlchemy's default.
+
+    SQLAlchemy 2.1 changed that default from psycopg2 to psycopg (v3). A bare
+    `postgresql://` URL then tries to import a package this project doesn't
+    install, and every cron run died at import with:
+
+        ModuleNotFoundError: No module named 'psycopg'
+
+    Also normalises the `postgres://` scheme that Neon and Heroku hand out.
+    URLs that already name a driver (`+psycopg`, `+asyncpg`, …) are left alone,
+    as is anything that isn't PostgreSQL — SQLite, used by the tests.
+    """
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://") :]
+    if url.startswith("postgresql://"):
+        url = f"postgresql+{_PG_DRIVER}://" + url[len("postgresql://") :]
+    return url
+
+
 def get_database_url() -> str:
     database_url = os.getenv("DATABASE_URL")
     if database_url:
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-        return database_url
+        return normalize_database_url(database_url)
 
     user = os.getenv("POSTGRES_USER", "postgres")
     password = os.getenv("POSTGRES_PASSWORD", "postgres")
     host = os.getenv("POSTGRES_HOST", "localhost")
     port = os.getenv("POSTGRES_PORT", "5432")
     db = os.getenv("POSTGRES_DB", "ai_news_aggregator")
-    return f"postgresql://{user}:{password}@{host}:{port}/{db}"
+    return normalize_database_url(f"postgresql://{user}:{password}@{host}:{port}/{db}")
 
 
 def get_database_info() -> dict:

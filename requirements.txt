@@ -1,5 +1,7 @@
-sqlalchemy
-psycopg2-binary
+# SQLAlchemy 2.1 swapped the default PostgreSQL DBAPI to psycopg v3; the URL now
+# names psycopg2 explicitly (app/database/connection.py) but keep the range honest.
+sqlalchemy>=2.0,<2.2
+psycopg2-binary>=2.9,<3
 python-dotenv
 yt-dlp
 groq
