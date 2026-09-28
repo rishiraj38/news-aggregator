@@ -357,13 +357,18 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 - **Runs**: `python -m app.daily_runner`
 - **Secrets needed**: `DATABASE_URL`, `GROQ_API_KEY`, `GROQ_API_KEY2`, `MY_EMAIL`, `APP_PASSWORD`; optional `YOUTUBE_API_KEY`, `WEBSHARE_*`
 - `timeout-minutes: 45` + a `daily-digest` concurrency group (a hung Groq/YouTube retry used to be able to run for hours)
-- `workflow_dispatch` accepts `hours`, `top_n`, `fail_on_zero_emails`
+- `workflow_dispatch` accepts `hours`, `top_n`, `fail_on_zero_emails`, and `test_email_only`
+  (wired to `DIGEST_EMAIL_TEST_ONLY` — runs the whole pipeline but mails one address,
+  which is how to verify a fix without sending every subscriber a duplicate)
 - Writes a job summary with per-source scrape counts, and emits `::warning` annotations when nothing was scraped or nothing was sent
 - No `.last_scrape` cache step — restoring it silently skipped scraping on manual re-runs; `PIPELINE_FORCE_SCRAPE=true` is set instead
 
 ### `instagram_post.yml`
 - **Schedule**: 2× daily — 04:30 UTC (10:00 AM IST) + 11:00 UTC (4:30 PM IST)
-- **Runs**: `publish_instagram_card.py --publish`
+- **Runs**: `publish_instagram_card.py --publish`; format comes from the `INSTAGRAM_POST_FORMAT`
+  repository variable (`carousel` | `reel` | `single`)
+- `workflow_dispatch` accepts `dry_run` (build + caption, publish nothing, uploads the result
+  as an artifact), `test_video_upload` (probe the reel staging chain only), and `format`
 - **Dedup**: skips digests with `posted_to_instagram="true"`, marks after successful post
 - **Secrets needed**: all digest secrets + `META_ACCESS_TOKEN`, `INSTAGRAM_BUSINESS_ID`, `CLOUDINARY_*`
 
@@ -435,6 +440,11 @@ Per-subscriber free-text terms, stored at `preferences['keywords']` (max 10 each
 
 
 27. **An unset GitHub Actions variable is an empty string, not absent**: `VAR: ${{ vars.X }}` with no repository variable set renders as `""`, so `os.getenv("VAR", "5")` returns `""` and `int("")` raises. This killed the Instagram workflow with `ValueError: invalid literal for int() with base 10: ''` while every secret was configured correctly. Read numeric settings through `env_int()` / `env_float()` / `env_str()` in `app/env_utils.py`, which treat empty, whitespace and unparseable values as "not set" and clamp to a range. In workflows, also follow the existing convention of `${{ vars.X || '5' }}`.
+
+
+28. **Never rely on SQLAlchemy's default DBAPI — and note that nothing here is version-pinned**: SQLAlchemy 2.1 changed the default PostgreSQL driver from psycopg2 to psycopg (v3). `requirements.txt` had no bounds, so CI installed 2.1.1 the day it shipped and *both* crons died at import with `ModuleNotFoundError: No module named 'psycopg'`, four days before anyone noticed. Nothing in this repo had changed, and local machines on 2.0.x couldn't reproduce it. `normalize_database_url()` in `app/database/connection.py` now emits `postgresql+psycopg2://`, so the driver is this repo's decision. The wider hazard stands: most of `requirements.txt` is still unbounded, so CI can pick up a breaking major release of any dependency on any morning. To reproduce a CI-only failure, build a throwaway venv (`uv venv && uv pip install -r requirements.txt`) rather than trusting the local one.
+
+29. **A broken digest silently breaks Instagram too**: `publish_instagram_card.py` exits with `No digests.` when nothing has been digested inside `--hours` (72 by default). During the SQLAlchemy outage that was the *second* error to appear, and on its own it looks like an Instagram problem. Check `daily_digest.yml` first — if it has been failing, the Instagram job cannot succeed until a pipeline run repopulates `digests`.
 
 ---
 
@@ -531,6 +541,7 @@ Offline and fast (~0.3s) — no network, no Postgres, no API keys. Run with `pyt
 | `test_instagram_carousel.py` | Curator rank order, de-duplication, top-up, and the Graph API 2-10 child guard |
 | `test_reel_video.py` | Runtime after crossfades, xfade offsets, the animated progress bar, single-frame zoompan input, and text fitting |
 | `test_env_utils.py` | Empty/blank/garbage env values fall back and clamp — the empty-Actions-variable crash |
+| `test_db_url.py` | The URL names psycopg2 explicitly — the SQLAlchemy 2.1 default-driver outage |
 
 `tests/conftest.py` puts the repo root on `sys.path`; DB-backed tests use a
 throwaway SQLite file via the `sqlite_repo` fixture, which reloads
