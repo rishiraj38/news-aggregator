@@ -13,6 +13,10 @@ on:
         description: "Articles per subscriber email"
         required: false
         default: "10"
+      test_email_only:
+        description: "Only personalise and email this address (leave blank for all subscribers)"
+        required: false
+        default: ""
       fail_on_zero_emails:
         description: "Fail the run if subscribers were processed but nothing was sent"
         type: boolean
@@ -60,6 +64,8 @@ jobs:
           WEBSHARE_USERNAME: ${{ secrets.WEBSHARE_USERNAME }}
           WEBSHARE_PASSWORD: ${{ secrets.WEBSHARE_PASSWORD }}
           DISABLE_SCRAPER_PROXY: ${{ vars.DISABLE_SCRAPER_PROXY }}
+          # Blank on a schedule, so scheduled runs always mail everyone.
+          DIGEST_EMAIL_TEST_ONLY: ${{ inputs.test_email_only }}
 
           # Pipeline tuning
           PIPELINE_HOURS: ${{ github.event.inputs.hours || '72' }}

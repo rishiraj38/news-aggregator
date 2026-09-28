@@ -358,7 +358,9 @@ def _segment_filter(seconds: float, progress_from: float, progress_to: float) ->
         f"[0:v]scale=1350:2400,zoompan=z='min(zoom+0.00045,1.10)':d={frames}"
         f":x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={REEL_W}x{REEL_H}:fps={FPS},setsar=1[bgv];"
         f"[1:v]format=rgba,fade=in:st=0.15:d=0.45:alpha=1[fgv];"
-        f"[bgv][fgv]overlay=x=0:y='-18*max(0\,1-t/0.55)':format=auto[base];"
+        # The backslash escapes the comma *for ffmpeg's parser*; keep the string raw so
+        # Python doesn't read it as an escape sequence (SyntaxWarning, an error in future).
+        rf"[bgv][fgv]overlay=x=0:y='-18*max(0\,1-t/0.55)':format=auto[base];"
         f"[base][2:v]overlay=x='-{REEL_W}+{REEL_W}*{span}':y={REEL_H - PROGRESS_H}:format=auto,"
         f"format=yuv420p[v]"
     )
